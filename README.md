@@ -21,7 +21,7 @@ The following Perl modules are used:
 
 ## How to Create the Database
 
-1.  Create the role (account) to be used for the database, following the instructions in (https://www.postgresql.org/docs/11/user-manag.html).  As at present, `addgrv` only knows how to access a local database owned by the user running the script, the role will need the `LOGIN` and `CREATEDB` attributes.
+1.  Create the role (account) to be used for the database, following the instructions in https://www.postgresql.org/docs/11/user-manag.html.  As at present, `addgrv` only knows how to access a local database owned by the user running the script, the role will need the `LOGIN` and `CREATEDB` attributes.
 2.  Create the database.  The `createdb` utility can be used for that purpose.  For example:
 
 `$ createdb spm 'SPM Model Database'`
