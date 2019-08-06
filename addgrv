@@ -838,6 +838,10 @@ records and processing of groves already present in the database will cause the 
 Only local PostgreSQL databases owned by the current user can be accessed since the C<--username>
 and C<--password> options are not yet implemented.
 
+=item *
+Right now, the null device is hard identified as /dev/null, which means it will only run under
+UNIX-like systems.
+
 =back
 
 =head1 Copyright
