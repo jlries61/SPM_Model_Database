@@ -1,0 +1,12 @@
+1.  Address addgrv errata as follows:
+  a.  Add ability to add new fields to the tables as they are encountered in grove files.
+  b.  Implement the --override option, allowing existing records to be updated.
+  c.  Add more graceful way to fail when the records to be added already exist.
+  d.  Implement the --host, --user, and --password options, allowing data to be written
+      to remote databases as well as those not owned by the current user.
+  e.  Vary the identity of the null device depending on the OS, allowing operation under Windows.
+  f.  Use ordered sets instead of unordered sets for ease of testing.
+  
+2.  Create utility to generate leaderboards from performance stat table.
+
+3.  Create utility to generate data dictionaries.
