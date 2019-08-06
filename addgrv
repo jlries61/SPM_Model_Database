@@ -843,7 +843,7 @@ Right now, the null device is hard identified as /dev/null, which means it will 
 UNIX-like systems.
 
 =item *
-Due to the use of unordered sets, the order in which INSERTs are done varies from run to run.
+Due to the use of unordered sets, the order in which C<INSERT>s are done varies from run to run.
 This is not incorrect, per se, but inconvenient for testing.
 
 =back
