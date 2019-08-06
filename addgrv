@@ -1,0 +1,848 @@
+#!/usr/bin/perl
+
+=head1 Name
+
+addgrv - Extract data from a set of SPM grove files and store them in a PostgreSQL database
+
+=head1 Version
+
+0.5
+
+=head1 Prerequisites
+
+B<SPM> (non-GUI) 8.3 or higher.  Available from Salford Systems.
+
+Required Perl modules:
+
+=over
+
+=item * boolean
+
+=item * File::Basename
+
+=item * File::Temp
+
+=item * Getopt::Long
+
+=item * JSON::Util
+
+=item * Pg
+
+=item * Set::Tiny
+
+=item * XML::Parser
+
+=back
+
+=head1 Synopsis
+
+addgrv [--db=<database name>] [--user=<username>] [--password=<database password>] [--dryrun] \
+       [--grvpath=<directory path>] [--project=<project name>] [--spmecho] [--override] \
+       [=spm=<SPM exec>] filename...
+
+=head1 Options
+
+=over
+
+=item --db=<database name>
+
+Specify the PostgreSQL database to use (default="spm")
+
+=item --user=<username>
+
+Specify the username for the PostgreSQL account to use (not yet implemented)
+
+=item --password=<database password>
+
+Specify the password for the PostgreSQL account to use (not yet implemented)
+
+=item --dryrun
+
+Instead of writing to the PostgreSQL database, write the generated SQL statements to standard output.
+
+=item --grvpath=<directory path>
+
+Path to the directory containing the grove files to read.  The default is the current working
+directory.
+
+=item --project=<project name>
+
+Optional project name to write to the database.
+
+=item --spmecho
+
+Write SPM text output to standard output instead of suppressing it.
+
+=item --override
+
+If the grove has already been entered into the database, update the records instead of aborting
+(not yet implemented).
+
+=item --spm=<SPM exec>
+
+Name of SPM exec to use (default=F<spmu>).
+
+=back
+
+=head1 Arguments
+
+The names of the files to process.  The grove names used in the database will be these names, less
+extensions.
+
+=cut
+
+# Extract data from a set of SPM grove files and store them in a PostgreSQL database
+# Support for other database engines is not planned
+
+# Copyright (C) 2019 John L. Ries
+# Copying and modifying of this script permitted under the terms
+# of the GNU General Public License, Version 3; or at the recipient's
+# option, any later version.
+
+#Module Declaration
+use boolean;                      # Boolean support for Perl
+use File::Basename;               # Parse file paths into directory, filename and suffix
+use File::Temp qw/ tempfile /;    # Scratch file support
+use Getopt::Long;                 # Extended processing of command line options
+use JSON::Util;                   # Utilities for reading and writing JSON
+use Pg;                           # Perl5 extension for PostgreSQL
+use Set::Tiny;                    # Unordered set support
+use XML::Parser;                  # A Perl module for parsing XML documents
+
+#Subroutine Declarations
+sub datadict($$$\%);              # Insert records into the data dictionary table
+sub getattrib($);                 # Return a hash containing the attributes for the given XML element
+sub getelem(\@$);                 # Return a list of children of the given XML element with the
+                                  # given name
+sub getelem_re(\@$);              # Return a list of children of the given XML element with names
+                                  # matching the given pattern
+sub getschema($);                 # Return a list of mining schema elements from the given PMML
+                                  # document
+sub insdata($$$\@\@\%@);          # Insert a record into a table
+sub mkclsdict($);                 # Generate an SQL statement creating the class dictionary table
+sub mkdatadict($);                # Generate an SQL statement creating the data dictionary table
+sub mkscmtab($);                  # Generate an SQL statement creating the mining schema table
+sub mkperftab($%);                # Generate an SQL statement creating the performance statistic
+                                  # table
+sub mktable($$\@\%@);             # Generate an SQL statement to create a table in the database
+                                  # if it does not already exist
+sub perfdata($$$\%);              # Enter performance stats into the database (outer routine)
+sub perfdata_in($$$\$\%);         # Enter performance stats into the database
+                                  # (inner recursive routine)
+sub perffields(%);                # Return list of performance stat field names (outer routine)
+sub perffld_in(\%);               # Return set of performance stat field names
+                                  # (inner recursive routine)
+sub readln($);                    # Read one line of text from the specified stream
+sub scmdata($$$\%);               # Write mining schema to the database
+sub sess_scanln($$\%);            # Extract a line from the session settings report
+sub sessdata_init();              # Initialize the session settings hash
+sub sessproc($$\%);               # Process session settings
+sub skip_past_blank($);           # Skip past blanks in text input
+sub sqlfmt($$);                   # Format constants for entry in the database
+sub sqltype($);                   # Convert type labels in session report to their SQL equivalents
+sub writedb($$);                  # Write an SQL statement either to the database engine or STDOUT
+sub writeln($$);                  # Write one line of text to the specified stream
+sub xtype($);                     # Extract base type label from vector specification
+
+#Define constants
+$DATADICT = "DataDict";                                  # Name of data dictionary table
+$CLASSDICT = "ClassDict";                                # Name of class dictionary table
+@PERFKEYS = ("Project", "Grove", "ModelID", "SampleID"); # Primary keys in performance stat table
+$SCMTAB = "ModVars";                                     # Name of mining schema table
+$PERFTAB = "Perfstats";                                  # Name of performance stat table
+$WRAPLEN=72; # Wrap array constants if they go past this column
+
+#Set Defaults
+$BLANK = "";
+$DB = "spm";            # Database name
+$DRYRUN = false;        # By default, write to database
+$NULLDEV = "/dev/null"; # This won't work under Windows
+$PROJECT = "";          # Optional project name
+$SPM = "spmu";          # SPM exec
+$SPMFLAG = "-q";        # SPM flags
+$dbh = STDOUT;          # Replace with database handle if writing to database
+
+GetOptions(
+  "db=s" => \$DB,               # Database name
+  "dryrun" => \$DRYRUN,         # Generate SQL code and write it to STDOUT instead of to the database
+  "grvpath=s" => \$GRVPATH,     # Location of input grove files
+  "project=s" => \$PROJECT,     # Project name
+  "spmecho" => \$SPMECHO,       # Write SPM classic output to STDOUT
+  "override" => \$OVERRIDE,     # Overwrite existing records in the database
+                                # (not currently implemented)
+  "password=s" => \$PASSWORD,     # Password for database account (not currently implemented)
+  "spm=s" => \$SPM,             # Name of SPM exec (must be non-GUI 8.3 or above)
+  "user=s" => \$USERNAME        # Database username
+    ) || die;
+
+
+$ARGC = @ARGV;                  # Number of arguments
+if ($DRYRUN) {undef $DB}        # If DRYRUN is invoked, we don't do anything with the database
+if ($SPMECHO) {$SPMFLAG="-e"}   # Use -e flag when running SPM
+
+# Check to see if $GRVPATH is a directory that can be read
+if (defined($GRVPATH)) {
+  if (!(-d $GRVPATH && -r $GRVPATH)) {die "Cannot open grove directory $GRVPATH\n"}
+}
+
+if ($ARGC == 0) {exit} # Nothing to do
+
+#Some initial declarations and initializations
+my %sessdata = &sessdata_init();               # Session data stored here
+my %jsondata;                                  # JSON documents stored here
+my %pmmldata;                                  # PMML/Translate output stored here
+my $grvset = Set::Tiny->new();                 # Set of groves to read
+$xmlparse = XML::Parser->new(Style => "Tree"); # XML parser
+
+# Process the input grove files
+foreach my $grove (@ARGV) {
+  # Calculate full pathname for grove file
+  my $grvpath = $grove;
+  if (defined($GRVPATH)) {$grvpath = "$GRVPATH/$grove"}
+
+  my ($grvname, $grvext) = split(/\./, $grove, 2);  # Basename and extension for the grove file
+  if ($grvset->has($grvname)) {next}                # If we've already processed this grove,
+                                                    # then skip
+  $grvset->insert($grvname);                        # Add the grove basename to the set
+  my ($cmd, $cmdname) = tempfile(SUFFIX => ".cmd"); # Define temporary command file
+  my ($sessfh, $sessrept) = tempfile();             # Define temporary session report file
+  my ($jsonfh, $jsonfile) = tempfile();             # Define temporary JSON output file
+  my ($pmmlfh, $pmmlfile) = tempfile();             # Define temporary PMML/Translate output file
+
+  # Close scratch output files before writing to them
+  close $sessfh || die "Failure to close session report file $sessreot\n";
+  close $pmmlfh || die "Failue to close PMML/Translate output file $pmml\n";
+  close $jsonfh || die "Failure to close classic output file $jsonout\n";
+
+  # Write temporary command file
+  if (defined($GRVPATH)) {&writeln($cmd, "fpath '$GRVPATH' /grove")}
+  &writeln($cmd, "output '$sessrept'");
+  &writeln($cmd, "grove '$grove' sessionreport");
+  &writeln($cmd, "output *");
+  &writeln($cmd, "translate language=pmml output='$pmmlfile'");
+  &writeln($cmd, "quit");
+  close $cmd || die "Failure to close command file $cmdfile\n";
+
+  # Run temporary command file in SPM
+  my $rc = system($SPM, $SPMFLAG, $cmdname);
+  if ($rc != 0) {die "Error running SPM\n"}
+
+  # Generate JSON output in separate step
+  my $rc = system("$SPM -G$grvpath -J$jsonfile >$NULLDEV");
+  if ($rc != 0) {die "Error running SPM\n"}
+
+  # Read in output files
+  &sessproc($sessrept, $grvname, \%sessdata);
+  $jsondata{$grvname} = JSON::Util->decode($jsonfile);
+  $pmmldata{$grvname} = $xmlparse->parsefile($pmmlfile);
+}
+# Separate the battery session options into their own table
+$nvar = @varlist = (); #Fields that go in the regular table
+$nbat = @batlist = (); #Fields that go in the supplementary battery table
+foreach $varname (@{$sessdata{"order"}}) {
+  if ($varname=~m/^BATTERY_/) {$nbat = push @batlist, $varname}
+  else {$nvar = push @varlist, $varname}
+}
+
+# The project and grove fields appear everywhere so...
+@pkey = ("project", "grove");
+
+# Time to connect to the database (maybe)
+if (defined($DB)) {
+  $dbh = Pg::connectdb("dbname=$DB");
+  if ($dbh->status == PGRES_CONNECTION_BAD) {
+    die "Failure to connect to database $DB: $dbh->errorMessage\n"}
+}
+
+#Let's do all of this in a single transaction
+&writedb($dbh, "begin;");
+
+# Declare the session settings tables, if they do not already exist,
+# assuming any fields are defined for them
+if ($nvar > 0) {&mktable($dbh, "session", \@pkey, \%sessdata, @varlist)}
+if ($nbat > 0) {&mktable($dbh, "batsession", \@pkey, \%sessdata, @batlist)}
+
+# Declare the performance stat table, if it does not already exist
+&mkperftab($dbh, %jsondata);
+
+# Declare the data dictionary and model variable tables, if they do not already exist
+&mkdatadict($dbh);
+&mkclsdict($dbh);
+&mkscmtab($dbh);
+
+# Insert new records into the appropriate tables
+foreach my $grvname ($grvset->members) {
+  my @pkeyval = ($PROJECT, $grvname);
+  &insdata($dbh, "session", $grvname, \@pkey, \@pkeyval, \%sessdata, @varlist);
+  &insdata($dbh, "batsession", $grvname, \@pkey, \@pkeyval, \%sessdata, @batlist);
+  &perfdata($dbh, $PROJECT, $grvname, $jsondata{$grvname});
+  &datadict($dbh, $PROJECT, $grvname, $pmmldata{$grvname});
+  &scmdata($dbh, $PROJECT, $grvname, $pmmldata{$grvname});
+}
+&writedb($dbh, "commit;"); # Finish the transaction
+
+# See the forward declarations above for descriptions of the subroutines
+
+sub datadict($$$\%) {
+  my ($dbh, $project, $grvname, $pmmldoc) = @_;
+  if ($$pmmldoc[0] ne "PMML") {die} # If the root element isn't labeled PMML then there is a problem
+  my ($datadict) = &getelem($pmmldoc, "DataDictionary"); # Data dictionary element
+  my @datafields = &getelem($datadict, "DataField");     # List of data field elements
+
+  # Enter the individual fields into the data dictionary
+  foreach my $field (@datafields) {
+    my %attrib = &getattrib($field);     # Attributes
+    my $name = $attrib{"name"};          # Field name
+    my $label = $attrib{"displayName"};  # Field label
+    my $optype = $attrib{"optype"};      # categorical or continuous
+    my $datatype = $attrib{"dataType"};  # Field data type
+    my %type;                            # Data type hash
+    my @fmtval = ();                     # List of formatted values
+
+    # Format the values for INSERT statement
+    foreach my $value ($project, $grvname, $name, $optype, $datatype, $label) {
+      push @fmtval, &sqlfmt($value, "str")}
+    my $values = join(", ", @fmtval);
+
+    # Generate and submit the INSERT statement
+    my $stmt = "insert into $DATADICT values ($values);";
+    &writedb($dbh, $stmt);
+
+    # For categorical fields, enter the individual classes into the class dictionary
+    if ($optype eq "categorical") {
+      my @cats = &getelem($field, "Value");   # List of class elements
+      foreach my $cat (@cats) {
+        my %attrib = &getattrib($cat);        # Attribute hash
+        my $catval = $attrib{"value"};        # Class value
+        my $label = $attrib{"displayValue"};  # Class label
+        my @fmtval = ();                      # List of formatted values
+        foreach my $value ($project, $grvname, $name, $catval, $label) {
+          push @fmtval, &sqlfmt($value, "str")}
+        my $values = join(", ", @fmtval);
+        my $stmt = "insert into $CLASSDICT values ($values);";
+        &writedb($dbh, $stmt);
+      }
+    }
+  }
+}
+
+sub getattrib($) {
+  my ($elem) = @_;
+  my $content = $$elem[1];    # Reference to content array
+  my $attrib = $$content[0];  # Reference to attribute hash
+  return %$attrib;
+}
+
+sub getelem(\@$) {
+  my ($proot, $label) = @_;
+  my $content = $$proot[1]; # Reference to content array
+  my $ncont = @$content;    # Number of elements in content array
+  my @elem = ();            # List of elements to return
+  for (my $i = 1; $i < $ncont; $i++) {  # We skip the attribute hash
+    my $name = $$content[$i++];         # Element name
+    if ($name eq $label) {              # We have a match
+      my @elemnew = ($name, $$content[$i]); # Add the identified element to the list
+      push @elem, \@elemnew;
+    }
+  }
+  return @elem;
+}
+
+sub getelem_re(\@$) {
+  my ($proot, $pattern) = @_;
+  my $content = $$proot[1]; # Reference to content array
+  my $ncont = @$content;    # Number of elements in content array
+  my @elem = ();            # List of elements to return
+  for (my $i = 1; $i < $ncont; $i++) { # We skip the attribute hash
+    my $name = $$content[$i++];        # Element name
+    if ($name=~m/$pattern/) {          # We have a match
+      my @elemnew = ($name, $$content[$i]); # Add the identified element to the list
+      push @elem, \@elemnew;
+    }
+  }
+  return @elem;
+}
+
+sub insdata($$$\@\@\%@) {
+  my ($dbh, $tabname, $grvname, $pkeyname, $pkeyval, $pdata, @varname) = @_;
+  my $nkey = @$pkeyname;                        # List of primary key field names
+  my $nvar = @varname;                          # List of data field names
+  my $stmt = "insert into $tabname values (\n"; # Start generating SQL statement
+
+  # Add primary key field values to statement
+  for (my $ikey = 0; $ikey < $nkey; $ikey++) {
+    $stmt .= "  '$$pkeyval[$ikey]', /* $$pkeyname[$ikey] */\n";
+  }
+  # Add data field values to statement
+  for (my $ivar = 0; $ivar < $nvar; $ivar++) {
+    my $name = $varname[$ivar];        # Field name
+    my $type = $$pdata{"type", $name}; # Field type
+    my $last = ($ivar == $nvar - 1);   # Last field indicator
+    if (!exists($$pdata{"value", $grvname, $name})) {
+      $stmt .= "  NULL";
+    }
+    elsif ($$pdata{"is_vector", $name}) { # We're dealing with a vector instead of a scalar
+      my $line = "  '{"; # Open with a curly brace
+      my $first = true;  # Set to false after processing first element
+      foreach my $value (@{$$pdata{"value", $grvname, $name}}) {
+        if ($first) {$first = false}
+        else {$line .= ", "} # Separate values with commas
+        if (length($line) > $WRAPLEN) { # Wrap overly long lines
+          $stmt .= $line . "\n";
+          $line = "    "; # Indent
+        }
+        $line .= &sqlfmt($value, $type{$name}); # Add formatted value to line
+      }
+      $stmt .= "$line}'"; # Add line to statement
+    } else { # We're dealing with a scalar
+      my $value = $$pdata{"value", $grvname, $name};
+      $stmt .= "  " . &sqlfmt($value, $type);
+    }
+    if ($last) {
+      $stmt .= ");"; # End of statement
+    }
+    else {
+      $stmt .= ",";  # We separate values with commas
+    }
+    $stmt .= " /* $name $type */\n";  # Helpful comment
+  }
+  &writedb($dbh, $stmt); # Print or execute statement
+}
+
+sub mkclsdict($) {
+  my ($dbh) = @_;
+  my @pkey = ("Project", "Grove", "FieldName", "Class");      # Primary key fields
+  my @datafields = ("Label");                                 # Data field
+  my %flddata;                                                # Convenient hash
+  $flddata{"type", "Label"} = "str";                          # Declare Label as text string
+  &mktable($dbh, $CLASSDICT, \@pkey, \%flddata, @datafields); # Create the table
+}
+
+sub mkdatadict($) {
+  my ($dbh) = @_;
+  my @pkey = ("Project", "Grove", "FieldName");                     # Primary key fields
+  my @datafields = ("Optype", "DataType", "Label");                 # Data fields
+  my %flddata;                                                      # Convenient hash
+  foreach my $name (@datafields) {$flddata{"type", $name} = "str"}  # Declare data fields aas text
+  &mktable($dbh, $DATADICT, \@pkey, \%flddata, @datafields);        # Create the table
+}
+
+sub mkperftab($%) {
+  my ($dbh, %data) = @_;
+  my $nfields = @fields = &perffields(%data); # List of performance stat field names
+  if ($nfields > 0) {
+    my %tabdata;                           # Convenient hash
+    $tabdata{"type", "ModelID"} = "int";   # Declare ModelID as integer
+    $tabdata{"type", "ModelType"} = "str"; # Declare ModelType as text string
+    foreach my $field (@fields) {$tabdata{"type", $field} ="dbl"} # Declare the rest as double
+    unshift @fields, "ModelType";          # Prepend ModelType to the list of stat fields
+    &mktable($dbh, $PERFTAB, \@PERFKEYS, \%tabdata, @fields); # Create the table
+  }
+}
+
+sub mkscmtab($) {
+  my ($dbh) = @_;
+  my @pkey = ("Project", "Grove", "ModelID", "FieldName"); # Primary key fields
+  my @datafields = ("UsageType", "Importance");            # Data fields
+  my %tabdata;                                             # Convenient hash
+  $tabdata{"type", "ModelID"} = "int";                     # Declare ModelID as integrer
+  $tabdata{"type", "UsageType"} = "str";                   # Declare UsageType as text
+  $tabdata{"type", "Importance"} = "dbl";                  # Declare Importance as double
+  &mktable($dbh, $SCMTAB, \@pkey, \%tabdata, @datafields); # Create the table
+}
+
+sub mktable($$\@\%@) {
+  my ($dbh, $tabname, $pkey, $pdata, @varname) = @_;
+  my $stmt = "create table if not exists $tabname (\n";   # Start generating SQL statement
+  if (length(@$pkey) > 0) {    # Declare primary keys if there are any
+    my $typestr = "text";      # Default type for primary key fields
+    foreach my $key (@$pkey) { # But we can override it as the need arises
+      if (exists($$pdata{"type", $pkey})) {$typestr = &sqltype($$pdata{"type", $pkey})}
+      $stmt .= "  $key $typestr,\n"; # Add the field specification to the statement
+    }
+    # Declare the foregoing as primary keys
+    $stmt .= "  primary key (";
+    my $first = true;
+    foreach my $key (@$pkey) {
+      if (!$first) {
+        $stmt .= ", "; # Separate names with commas
+      }
+      $stmt .= $key;   # Add the field name to the statement
+      $first = false;
+    }
+    $stmt .= ")";      # Finish the declaration
+  }
+  # Specify the data fields
+  foreach my $name (@varname) {
+    my $is_vector = $$pdata{"is_vector", $name}; # Indicates if field is an array
+    my $type = $$pdata{"type", $name};           # Field type
+    $stmt .= ",\n  $name " . &sqltype($type);    # Add specification to the statement
+    if ($is_vector) {
+      $stmt .= "[]";
+    }
+  }
+  $stmt .= ");";           # End the statement
+  &writedb($dbh, $stmt);   # Execute or write the statement
+}
+
+sub perfdata($$$\%) {
+  my ($dbh, $project, $grvname, $pdata) =@_;
+  my $grove = $$pdata{"grove"};  # List of model records
+  my $nmod = 0;                  # Serial number
+  #Process individual model records
+  foreach my $modrec (@$grove) {&perfdata_in($dbh, $project, $grvname, \$nmod, $modrec)}
+}
+
+sub perfdata_in($$$\$\%) {
+  my ($dbh, $project, $grvname, $pnmod, $pjson) = @_;
+  # We look for model results before children
+  # If both exist, the former are for the "winning" model and we need not process the latter
+  if (exists($$pjson{"model-results"})) {
+    my $modtype = $$pjson{"model-type"};             # Model type
+    my $results = $$pjson{"model-results"};          # Reference to model results element
+    my $perfstats = $$results{"performance-stats"};  # Reference to performance stats element
+    my $nsamp = @sampname = keys(%$perfstats);       # List of sample names
+    if ($nsamp > 0) { # If there aren't any then skip
+      foreach my $sampname (@sampname) {
+        my $samprec = $$perfstats{$sampname};  # Reference to sample record
+        my @statnames = keys(%$samprec);       # List of performance stat names
+        # Generate INSERT statement
+        my $stmt = "insert into $PERFTAB (\n"; # We specify only the defined fields
+        $stmt .= "  " . join(", ", @PERFKEYS, "ModelType");
+        foreach my $statname (@statnames) {
+          $stmt .= ",\n  $statname"; # For ease of reading, each stat name is put on its own line
+        }
+        $stmt .= ") values (\n";     # Close the list of field names and start list of values
+        my @keys = ("'$project'", "'$grvname'", "$$pnmod", "'$sampname'"); # List of key values
+        $stmt .= "  " . join(", ", @keys, "'$modtype'"); # Add key values to statement
+        # Add stat values to statement
+        foreach my $statname (@statnames) {
+          $stmt .= ",\n  $$samprec{$statname}"; # Each stat value is on its own line
+        }
+        $stmt .= ");";         # Finish the statement
+        &writedb($dbh, $stmt); # Write or execute it
+      }
+      $$pnmod++; # Increment the model number
+    }
+  }
+  elsif (exists($$pjson{"children"})) { # Then we recurse into the child elements
+    foreach my $child (@{$$pjson{"children"}}) {
+      &perfdata_in($dbh, $project, $grvname, $pnmod, $child)}
+  }
+}
+
+sub perffld_in(\%) {
+  my $statset = Set::Tiny->new(); # Set of performance stat names
+  my ($json) = @_;
+  if (exists($$json{"children"})) { # Recurse into the child elements
+    foreach my $child (@{$$json{"children"}}) {$statset = $statset->union(&perffld_in($child))}
+  }
+  if (exists($$json{"model-results"})) { # Add the names in the top level model results element
+    my $modrec = $$json{"model-results"};           # Reference to model results element 
+    my $perfstats = $$modrec{"performance-stats"};  # Reference to performance stats element
+    # Add any new stat field names found to the set
+    foreach my $sample (keys(%$perfstats)) {
+      my $samprec = $$perfstats{$sample};
+      my $keyset = Set::Tiny->new(keys(%$samprec));
+      $statset = $statset->union($keyset);
+    }
+  }
+  return $statset;
+}
+
+sub perffields(%) {
+  my (%data) = @_;
+  my $statset = Set::Tiny->new(); # Set of performance stat field names
+  foreach my $grvname (keys(%data)) { # For each grove
+    my %json = %{$data{$grvname}};    # JSON tree for grove
+    my @grove = @{$json{"grove"}};    # List of grove elements
+    # Scan each grove element for performance stat field names, adding them to the set
+    foreach my $modrec (@grove) {$statset = $statset->union(&perffld_in($modrec))}
+  }
+  return $statset->members; # Return a list of the set members in no particular order
+}
+
+sub readln($) {
+  my ($fh) = @_;
+  if (eof($fh)) {die}
+  my $line = <$fh>;
+  chomp $line;
+  return $line;
+}
+
+sub scmdata($$$\%) {
+  my ($dbh, $project, $grvname, $pmmldoc) =@_;
+  my $nmod = 0; # Serial number
+  if ($$pmmldoc[0] ne "PMML") {die} # If the root element name isn't "PMML", we have a problem.
+  my @modlist = &getelem_re($pmmldoc, "Model"); # List of model elements
+  foreach my $model (@modlist) {
+    my ($schema) = &getelem($model, "MiningSchema");  # MiningSchema element
+    my @fieldlist = &getelem($schema, "MiningField"); # List of MiningField elements
+    # Insert data from individual MiningField elements into the MiningSchema table
+    foreach my $field (@fieldlist) {
+      my %attrib = &getattrib($field);       # Element attributes
+      my $name = $attrib{"name"};            # Field name
+      my $usageType = $attrib{"usageType"};  # Usage type
+      my $imp = $attrib{"importance"};       # Predictor importance
+      # Skip predictors with zero importance
+      if (defined($imp)) {
+        if ($imp == 0 && $usageType eq "active") {next}
+        $imp *= 100;
+      }
+      my $nval = @value = ($project, $grvname, $nmod, $name, $usageType, $imp); # List of values
+      my @vartype = ("str", "str", "int", "str", "str", "dbl"); # List of data types
+      my @fmtval = (); # List of formatted values
+      for (my $i = 0; $i < $nval; $i++) {
+        push @fmtval, &sqlfmt($value[$i], $vartype[$i]);
+      }
+      $fmtvals = join(", ", @fmtval);
+      &writedb($dbh, "insert into $SCMTAB values ($fmtvals);");
+    }
+    $nmod++; # Increment serial number
+  }
+}
+
+sub sessdata_init() {
+  my %data;
+  my @order = ();                    # This allows us to specify the order of the fields
+  $data{"names"} = Set::Tiny->new(); # Set of field names
+  $data{"nvar"} = 0;                 # Number of session settings fields
+  $data{"order"} = \@order;
+  return %data;
+}
+
+sub sessproc($$\%) {
+  my ($filename, $grvname, $pdata) = @_;
+  my $nrec = 0; # Number of records processed
+
+  #Process input file
+  open INPUT, "<", $filename || die "Failure to open input file $filename\n";
+  until (eof(INPUT)) {
+    my $line = &readln(INPUT);
+    if ($line=~m/^ Session Settings/) { # Start processing
+      $line = &skip_past_blank(INPUT);  # Skip to the top of the table
+      my $nextline;                     # Look-ahead line
+      do {
+        $nextline = &readln(INPUT);
+        if ($nextline=~m/^  /) {$line .= $nextline} # Continuation of previous line
+        else {
+          &sess_scanln($line, $grvname, $pdata); # We're done with the line.  Scan it.
+          $line = $nextline;                     # Next line becomes the current line
+        }
+      } until (length($nextline) == 0); # When we reach a blank line, we've read the whole table.
+    }
+  }
+}
+
+sub sess_scanln($$\%) {
+  my ($line, $grvname, $pdata) = @_;
+  $line=~s/^ *//;           # Remove leading spaces
+  $line=~s/ *\(Spec 1\)//;  # Remove "((Spec 1)" from certain AUTOMATE entries
+  my ($name, $type, $value) = split(/ +/, $line, 3); # Split the line
+  my $nval = 1;                     # Initialize count to 1
+  my @names = @{$$pdata{"order"}};  # Existing order of field names
+  if ($type eq "unsigned") {return} # "unsigned" fields are redundant
+  if (!$$pdata{"names"}->has($name)) {    # If we have not already encountered this field...
+    $$pdata{"names"}->insert($name);      # Insert the name into the set of field names
+    $$pdata{"nvar"} = push @names, $name; # Add the name to the order list and update the field count
+    $$pdata{"n", $name} = 0;              # Initialize the number of elements
+    $$pdata{"is_vector", $name} = false;  # Assume the field is a scalar
+  }
+  if ($type=~m/^vec</) {                  # But if it is not...
+    my @value = split(/ +/, $value);      # List of individual values
+    $nval = @value;                       # Number of individual values
+    $$pdata{"value", $grvname, $name} = \@value; # Insert the values into the hash
+    $$pdata{"is_vector", $name} = true;          # Flag the field as a vector
+    $type = &xtype($type);                       # Set the type to the base type
+  } else {
+    $$pdata{"value", $grvname, $name} = $value;  # Insert the value of the scalar
+  }
+  if ($nval > $$pdata{"n", $name}) {$$pdata{n, $name} = $nval} # Update the maximum number of values
+  $$pdata{"order"} = \@names;      # Update the order list in the hash
+  $$pdata{"type", $name} = $type;  # Insert the field type into the hash
+}
+
+sub skip_past_blank($) {
+  my ($fh) = @_;
+  my $line;
+  do {
+    $line = &readln($fh);
+  } until (length($line) == 0);
+  return &readln($fh);
+}
+
+sub sqlfmt($$) {
+  my ($value, $type) = @_;
+  if (!defined($value) || $value eq ".") {return "NULL"} # Undefined is the same as missing
+  if ($type eq "str") {
+    $value=~s/'/''/g; # Any apostrophes in the string have to be doubled
+    return "'$value'";
+  }
+  return $value;
+}
+
+sub sqltype($) {
+  my ($spmtype) = @_;
+  if ($spmtype eq "dbl") {return "double precision"}
+  elsif ($spmtype eq "int") {return "bigint"}
+  elsif ($spmtype eq "bool") {return "boolean"}
+  elsif ($spmtype eq "str") {return "text"}
+  else {die "$spmtype\n"};
+}
+
+sub writedb($$) {
+  my ($dbh, $stmt) = @_;
+  my $isdb = (length($DB) > 0);
+  if ($isdb) { # If we're writing to a database...
+    my $res = $dbh->exec($stmt);
+    my $status = $res->resultStatus;
+    # We'll make the error messages more informative later
+    if ($status == PGRES_BAD_RESPONSE) {die "Bad response: $stmt\n"}
+    elsif ($status == PGRES_NONFATAL_ERROR) {die "Nonfatal error: $stmt\n"}
+    elsif ($status == PGRES_FATAL_ERROR) {die "Fatal error: $stmt\n"}
+  } else {&writeln($dbh, $stmt)} # Otherwise, we're writing to a text stream
+}
+
+sub writeln($$) {
+  my ($fh, $line) = @_;
+  print $fh "$line\n";
+}
+
+sub xtype($) {
+  my ($type) = @_;
+  my $col0 = index($type, "<") + 1;
+  my $col1 = index($type, ">");
+  $type = substr($type, $col0, $col1-$col0);
+  return $type;
+}
+
+#The rest of the POD follows
+
+=head1 Description
+
+B<addgrv> uses SPM to read one or more grove files and input key model data into a PostgreSQL
+database.  Support for database engines is not contemplated.  The data extracted include:
+
+=over
+
+=item * The contents of the session report produced by the C<GROVE SESSIONREPORT> command.
+
+=item * The data dictionary, as taken from the PMML/Translate output.
+
+=item * Performance statistics for each model in the grove file.
+
+=back
+
+The tables created are as follows:
+
+=over
+
+=item Session
+
+Non-battery session settings (one line per grove).  The primary key consists of C<Project>
+and C<Grove>, both text.  The remaining fields have the same names and types as those reported in
+the session report, except that inasmuch as "unsigned" settings are exactly the same as the "int"
+settings, the former are omitted.
+
+=item BatSession
+
+The battery session settings.  The primary keys is the same as for C<Session> and the
+fields names are those appearing in the session report.
+
+=item PerfStats
+
+The performance stats for each model.  The primary key consists of:
+
+ Name      Type    Description
+|---------------------------------------------------------|
+| Project | Text    | Project name (optional)             |
+| Grove   | Text    | Source grove name (minus extension) |
+| ModelID | Integer | Model serial number (within grove)  |
+| Sample  | Text    | Sample name (learn/test)            |
+|---------------------------------------------------------|
+
+The performance statistic fields depend on the model type, but all are
+double precision floating point.
+
+=item DataDictionary
+
+A simple data dictionary (one record per field per grove).  The fields are:
+
+  Name        Type   Description
+|---------------------------------------------------------------|
+| Project   | text | Project name (optional)                    |
+| Grove     | text | Grove name                                 |
+| FieldName | text | Field name                                 |
+| Optype    | text | Operative type (categorical or continuous) |
+| DataType  | text | Data Type                                  |
+| Label     | text | Field label                                |
+|---------------------------------------------------------------|
+
+The first three fields constitute the primary key.
+
+=item ClassDict
+
+A supplemental data dictionary documenting target and predictor classes.  The fields are:
+
+  Name        Type   Description
+|--------------------------------------------|
+| Project   | text | Project name (optional) |
+| Grove     | text | Grove name              |
+| FieldName | text | Field name              |
+| Class     | text | Class value             |
+| Label     | text | Class label             |
+|--------------------------------------------|
+
+There is one record per value per categorical variable per grove.  The first four fields constitute
+the primary key.
+
+=item ModVars
+
+Table of model variables (one record per variable, per model, per grove).  This differs from the
+data dictionary in that the latter documents all data fields used in any of the models, whereas
+this table includes only the fields that are used by the given model.  The fields are as follows:
+
+  Name        Type   Description
+|-----------_---------------------------------------------------|
+| Project    | text    | Project name (optional)                |
+| Grove      | text    | Grove name                             |
+| ModelID    | integer | Model serial number (within grove)     |
+| FieldName  | text    | Field name                             |
+| UsageType  | text    | Usage type (predicted, active, weight) |
+| Importance | double  | Relative importance score              |
+|---------------------------------------------------------------|
+
+The first four fields constitute the primary key.  The importance scores are
+only defined for "active" (predictor) fields and are scaled to vary between
+0 (not used by the model) and 100 (most important).  If the modeling procedure
+does not produce variable importance scores, C<Importance> will be set to
+C<NULL>.
+
+=back
+
+=head1 Errata
+
+These will be remedied in future versions of B<addgrv>.
+
+=over
+
+=item *
+At present, fields encountered after the tables are created cannot be inserted into the database
+unless it is dropped and recreated.  If such fields are encountered, the whole job will be aborted.
+
+=item *
+Since the C<--override> options is not yet impkemented, no means are yet provided to update existing
+records and processing of groves already present in the database will cause the job to be aborted.
+
+=item *
+Only local PostgreSQL databases owned by the current user can be accessed since the C<--username>
+and C<--password> options are not yet implemented.
+
+=back
+
+=head1 Copyright
+
+(C) 2019 John L. Ries.
+
+Copying and modifying of this script permitted under the terms of the GNU General Public License,
+Version 3; or at the recipient's option, any later version.
