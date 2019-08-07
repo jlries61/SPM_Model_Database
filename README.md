@@ -3,6 +3,9 @@ Utilities to create, query, and maintain a PostgreSQL database to store SPM mode
 
 The intent is to create a set of Perl scripts to perform the functions above, easing the task of tracking the models built in the course of a project.  PostgreSQL was selected as the database engine has having the power and flexibility to perform the tasks required.
 
+## Legalities
+The scripts and documents included in this package are under copyright, but distributed under the terms of the GNU General Public License version 3, or at the recipient's option, any later version.  See the file LICENSE in this repository for details.
+
 ## Prerequisites
 * Perl 5.  The minimum version used for testing thus far is 5.28.2, but the language is intended to be generic.
 * PostgreSQL.  The system is being developed with version 11.4, but older ones will probably work.
@@ -99,7 +102,7 @@ spm=> select modelid,modeltype,mse,rmse,mad,mape,rsquared from perfstats where g
 
 We see here all of the common regression performance stats for the test sample, in descending order of R-squared.
 
-## Getting Help
+## Getting Helphttps://github.com/jlries61/SPM_Model_Database/issues
 
 The script `addgrv` has built-in documentation (POD) which can be read via the `perldoc` command like so:
 
@@ -110,3 +113,37 @@ This will bring up a document that looks much like a UNIX manpage.
 
 To inquire of the developer, post an [issue](https://github.com/jlries61/SPM_Model_Database/issues).
 
+## Future Plans
+
+The file `todos.txt`  will always contain the current todo list, but here is a summary
+
+* The script `addgrv` is incomplete at the present time.  The most glaring omissions are the current lack of a means to access a database remotely or one that the current user does not own.  There is also no ability to add new fields to the tables once they have been created, or to update existing records in the database.  These issues will be addressed in the near future.
+* There will be a utility to generate a model summary including grove and model IDs, model type, user created memos, key settings, and user-selected performance stats.
+* There will be a utility to generate a data dictionary for a project or one or more individual groves.
+* There will be a utility to generate a command sequence to reproduce a requested model.
+
+## Database Structure
+
+There are currently six tables as follows:
+
+Session
+: Main session settings table (one record per grove).
+
+BatSession
+: Session battery settings table (one record per grove).  This table includes all settings with names prefixed with `BATTERY_`.
+
+DataDict
+: Main data dictionary (one record per field per grove).
+
+ClassDict
+: Supplemental data dictionary documenting the values of categorical fields (one record per value per field per grove).
+
+ModVars
+: Documents the fields used in each model, giving their functions and the relative importance of each predictor
+(one record per field per model per grove).
+
+PerfStats
+: Contains the available performance statistics for each model.  There is one field for each statistic used, but since
+not all performance statistics are computed for every model type, there are likely to be more statistic fields than are computed for any given model (one record per model per grove).
+
+For details, see the documentation for `addgrv` (`perldoc addgrv`).
