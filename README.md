@@ -1,7 +1,7 @@
 # SPM_Model_Database
 Utilities to create, query, and maintain a PostgreSQL database to store SPM model data 
 
-The intent is to create a set of Perl scripts to perform the functions above, easing the task of tracking the models built in the course of a project.  PostgreSQL was selected as the database engine has having the power and flexibility to perform the tasks required.
+The intent is to create a set of Perl scripts to perform the functions above, easing the task of tracking the models built in the course of a project (which may run into the hundreds).  PostgreSQL was selected as the database engine as having the power and flexibility to perform the tasks required.
 
 ## Legalities
 The scripts and documents included in this package (except for LICENSE) are copyright 2019, John L. Ries; but distributed under the terms of the GNU General Public License version 3, or at the recipient's option, any later version.  See the file LICENSE in this repository for details.  The SPM grove files included in this distribution for testing and demonstration purposes are hereby released to the public domain.
