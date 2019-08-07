@@ -102,7 +102,7 @@ spm=> select modelid,modeltype,mse,rmse,mad,mape,rsquared from perfstats where g
 
 We see here all of the common regression performance stats for the test sample, in descending order of R-squared.
 
-## Getting Helphttps://github.com/jlries61/SPM_Model_Database/issues
+## Getting Help
 
 The script `addgrv` has built-in documentation (POD) which can be read via the `perldoc` command like so:
 
