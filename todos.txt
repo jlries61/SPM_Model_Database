@@ -6,7 +6,10 @@
       to remote databases as well as those not owned by the current user.
   e.  Vary the identity of the null device depending on the OS, allowing operation under Windows.
   f.  Use ordered sets instead of unordered sets for ease of testing.
+  g.  Add data to describe variation in AUTOMATE batteries.
   
-2.  Create utility to generate leaderboards from performance stat table.
+2.  Create utility to generate leaderboards from performance stat table.  This would include project, grove, and model IDs, any user memos, the target variable, the number of predictors, and such performance stats and settings as the user may specify (but including a default set of performance stats, depending on the target type).
 
 3.  Create utility to generate data dictionaries.
+
+4.  Create utility to generate commands needed to replicate the desired model.
