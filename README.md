@@ -4,7 +4,7 @@ Utilities to create, query, and maintain a PostgreSQL database to store SPM mode
 The intent is to create a set of Perl scripts to perform the functions above, easing the task of tracking the models built in the course of a project (which may run into the hundreds).  PostgreSQL was selected as the database engine as having the power and flexibility to perform the tasks required.
 
 ## Legalities
-The scripts and documents included in this package (except for LICENSE) are copyright 2019, John L. Ries; but distributed under the terms of the GNU General Public License version 3, or at the recipient's option, any later version.  See the file LICENSE in this repository for details.  The SPM grove files included in this distribution for testing and demonstration purposes are hereby released to the public domain.
+The scripts and documents included in this package (except for LICENSE) are copyright 2019, John L. Ries; but distributed under the terms of the GNU General Public License version 3, as published by the Free Software Foundation, or at the recipient's option, any later version.  See the file LICENSE in this repository for details.  The SPM grove files included in this distribution for testing and demonstration purposes are hereby released to the public domain.
 
 ## Prerequisites
 * Perl 5.  The minimum version used for testing thus far is 5.28.2, but the language is intended to be generic.
