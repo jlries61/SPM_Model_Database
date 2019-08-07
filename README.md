@@ -108,4 +108,5 @@ $ perldoc addgrv
 ```
 This will bring up a document that looks much like a UNIX manpage.
 
-$ perldoc addgrv
+To inquire of the developer, post an [issue](https://github.com/jlries61/SPM_Model_Database/issues).
+
