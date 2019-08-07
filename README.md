@@ -42,3 +42,70 @@ It may be convenient to store model data from multiple projects in the same data
 
 `addgrv --project=Boston BOSALL1.GRV`
 
+After running this initial job, you can check the database to verify that the appropriate tables were created, like so:
+
+```
+spm=> \dt
+          List of relations
+ Schema |    Name    | Type  | Owner 
+--------+------------+-------+-------
+ public | batsession | table | jries
+ public | classdict  | table | jries
+ public | datadict   | table | jries
+ public | modvars    | table | jries
+ public | perfstats  | table | jries
+ public | session    | table | jries
+(6 rows)
+```
+
+You could create a quick data dictionary, like so:
+
+```
+spm=> select * from datadict where Grove='BOSALL1';
+ project |  grove  | fieldname |   optype    | datatype |                              label                               
+---------+---------+-----------+-------------+----------+------------------------------------------------------------------
+ Test    | BOSALL1 | CRIM      | continuous  | double   | Per capita crime rate by town
+ Test    | BOSALL1 | ZN        | continuous  | double   | Proportion of residential land zoned for lots over 25,000 sq.ft.
+ Test    | BOSALL1 | INDUS     | continuous  | double   | Proportion of non-retail business acres per town.
+ Test    | BOSALL1 | CHAS      | categorical | integer  | Tract bounds Charles River?
+ Test    | BOSALL1 | NOX       | continuous  | double   | Nitric oxides concentration (parts per 10 million)
+ Test    | BOSALL1 | RM        | continuous  | double   | Average number of rooms per dwelling
+ Test    | BOSALL1 | AGE       | continuous  | double   | Proportion of owner-occupied units built prior to 1940
+ Test    | BOSALL1 | DIS       | continuous  | double   | Weighted distances to five Boston employment centres
+ Test    | BOSALL1 | RAD       | continuous  | double   | Index of accessibility to radial highways
+ Test    | BOSALL1 | TAX       | continuous  | double   | Full-value property-tax rate per $10,000
+ Test    | BOSALL1 | PT        | continuous  | double   | Pupil-teacher ratio by town
+ Test    | BOSALL1 | B         | continuous  | double   | 1000(Bk - 0.63)^2 where Bk is the proportion of blacks by town
+ Test    | BOSALL1 | LSTAT     | continuous  | double   | % lower status of the population
+ Test    | BOSALL1 | MV        | continuous  | double   | Median value of owner-occupied homes in $1000's
+ Test    | BOSALL1 | WT        | continuous  | double   | 
+(15 rows)
+```
+
+To compare performance among the various models within the grove, one could do this:
+
+```
+spm=> select modelid,modeltype,mse,rmse,mad,mape,rsquared from perfstats where grove='BOSALL1' and sampleid='test' order by rsquared desc;
+ modelid | modeltype  |   mse   |  rmse   |   mad   |   mape   | rsquared 
+---------+------------+---------+---------+---------+----------+----------
+ 2       | rf         | 10.5105 |   3.242 | 1.98557 | 0.097268 |   0.8445
+ 0       | cart       |  13.472 | 3.67042 | 2.57948 | 0.127097 | 0.795443
+ 3       | mars       | 19.4722 | 4.41274 | 2.85223 | 0.152734 | 0.704335
+ 1       | treenet    | 19.9561 | 4.46722 | 2.22087 | 0.100015 | 0.696988
+ 4       | pathseeker | 27.8391 | 5.27627 | 3.35394 | 0.159816 | 0.577293
+ 5       | regression | 28.4477 | 5.33364 | 3.49347 | 0.170381 | 0.568051
+(6 rows)
+```
+
+We see here all of the common regression performance stats for the test sample, in descending order of R-squared.
+
+## Getting Help
+
+The script `addgrv` has built-in documentation (POD) which can be read via the `perldoc` command like so:
+
+```
+$ perldoc addgrv
+```
+This will bring up a document that looks much like a UNIX manpage.
+
+$ perldoc addgrv
