@@ -6,7 +6,7 @@ addgrv - Extract data from a set of SPM grove files and store them in a PostgreS
 
 =head1 Version
 
-0.5
+0.5.1
 
 =head1 Prerequisites
 
@@ -101,6 +101,7 @@ extensions.
 
 #Module Declaration
 use boolean;                      # Boolean support for Perl
+use English;                      # Use nice English (or awk) names for ugly punctuation variables
 use File::Basename;               # Parse file paths into directory, filename and suffix
 use File::Temp qw/ tempfile /;    # Scratch file support
 use Getopt::Long;                 # Extended processing of command line options
@@ -175,6 +176,9 @@ GetOptions(
   "user=s" => \$USERNAME        # Database username
     ) || die;
 
+# There are other OS' for which the null device is not /dev/null, but SPM doesn't currently run on
+# any of them.
+if ($OSNAME eq "MSWin32") {$NULLDEV = "NUL:"}
 
 $ARGC = @ARGV;                  # Number of arguments
 if ($DRYRUN) {undef $DB}        # If DRYRUN is invoked, we don't do anything with the database
