@@ -1,0 +1,6 @@
+Change log
+
+0.5: Initial release
+
+0.5.1: Set the null device to NUL: under native Windows builds of Perl.
+       Under Cygwin, the null device is /dev/null.
