@@ -111,6 +111,10 @@ use Set::Tiny;                    # Unordered set support
 use XML::Parser;                  # A Perl module for parsing XML documents
 
 #Subroutine Declarations
+sub chkrecord($$$$);              # Return true if record already in the table, otherwise false
+sub chktable($$\@\%@);            # Check to see if the target table already exists.  If it does.
+                                  # then add any new fields that may be required.  Otherwise,
+                                  # create the table
 sub datadict($$$\%);              # Insert records into the data dictionary table
 sub getattrib($);                 # Return a hash containing the attributes for the given XML element
 sub getelem(\@$);                 # Return a list of children of the given XML element with the
@@ -119,13 +123,15 @@ sub getelem_re(\@$);              # Return a list of children of the given XML e
                                   # matching the given pattern
 sub getschema($);                 # Return a list of mining schema elements from the given PMML
                                   # document
+sub getval($$$);                  # Return the SQL-formatted value of the given field
 sub insdata($$$\@\@\%@);          # Insert a record into a table
+sub lclist(@);                    # Convert input list to lowercase
 sub mkclsdict($);                 # Generate an SQL statement creating the class dictionary table
 sub mkdatadict($);                # Generate an SQL statement creating the data dictionary table
 sub mkscmtab($);                  # Generate an SQL statement creating the mining schema table
 sub mkperftab($%);                # Generate an SQL statement creating the performance statistic
                                   # table
-sub mktable($$\@\%@);             # Generate an SQL statement to create a table in the database
+sub mktable($$$$@);               # Generate an SQL statement to create a table in the database
                                   # if it does not already exist
 sub perfdata($$$\%);              # Enter performance stats into the database (outer routine)
 sub perfdata_in($$$\$\%);         # Enter performance stats into the database
@@ -141,17 +147,25 @@ sub sessproc($$\%);               # Process session settings
 sub skip_past_blank($);           # Skip past blanks in text input
 sub sqlfmt($$);                   # Format constants for entry in the database
 sub sqltype($);                   # Convert type labels in session report to their SQL equivalents
+sub whereclse($$$);               # Generate a WHERE clause
 sub writedb($$);                  # Write an SQL statement either to the database engine or STDOUT
 sub writeln($$);                  # Write one line of text to the specified stream
 sub xtype($);                     # Extract base type label from vector specification
 
 #Define constants
-$DATADICT = "DataDict";                                  # Name of data dictionary table
-$CLASSDICT = "ClassDict";                                # Name of class dictionary table
-@PERFKEYS = ("Project", "Grove", "ModelID", "SampleID"); # Primary keys in performance stat table
-$SCMTAB = "ModVars";                                     # Name of mining schema table
-$PERFTAB = "Perfstats";                                  # Name of performance stat table
-$WRAPLEN=72; # Wrap array constants if they go past this column
+$BLANK = "";
+$SPACE = " ";
+$CLASSDICT = "ClassDict";                    # Name of class dictionary table
+$DATADICT = "DataDict";                      # Name of data dictionary table
+@DATAFLDS = ("Optype", "DataType", "Label"); # List of data dictionary fields
+@PKEYS = ("Project", "Grove");               # Core set of primary keys
+@DATAKEYS = (@PKEYS, "FieldName");           # Primary keys in data dictionary table
+@CLSKEYS = (@DATAKEYS, "Class");             # Primary keys in class dictionary table
+@PERFKEYS = (@PKEYS, "ModelID", "SampleID"); # Primary keys in performance stat table
+@SCMKEYS = (@PKEYS, "ModelID", "FieldName"); # Primary keys in mining schema table
+$SCMTAB = "ModVars";                         # Name of mining schema table
+$PERFTAB = "Perfstats";                      # Name of performance stat table
+$WRAPLEN=72;                                 # Wrap array constants if they go past this column
 
 #Set Defaults
 $BLANK = "";
@@ -258,13 +272,10 @@ if (defined($DB)) {
     die "Failure to connect to database $DB: $dbh->errorMessage\n"}
 }
 
-#Let's do all of this in a single transaction
-&writedb($dbh, "begin;");
-
 # Declare the session settings tables, if they do not already exist,
 # assuming any fields are defined for them
-if ($nvar > 0) {&mktable($dbh, "session", \@pkey, \%sessdata, @varlist)}
-if ($nbat > 0) {&mktable($dbh, "batsession", \@pkey, \%sessdata, @batlist)}
+if ($nvar > 0) {&chktable($dbh, "session", \@pkey, \%sessdata, @varlist)}
+if ($nbat > 0) {&chktable($dbh, "batsession", \@pkey, \%sessdata, @batlist)}
 
 # Declare the performance stat table, if it does not already exist
 &mkperftab($dbh, %jsondata);
@@ -283,15 +294,66 @@ foreach my $grvname ($grvset->members) {
   &datadict($dbh, $PROJECT, $grvname, $pmmldata{$grvname});
   &scmdata($dbh, $PROJECT, $grvname, $pmmldata{$grvname});
 }
-&writedb($dbh, "commit;"); # Finish the transaction
 
 # See the forward declarations above for descriptions of the subroutines
+
+sub chkrecord($$$$) {
+  my ($dbh, $tabname, $pkeyname, $pkeyval) = @_;
+  if (length($DB) == 0) {return $false}
+    my $stmt = "select count(*) from $tabname where ";
+  for (my $i = 0; $i < $nkey; $i++) {
+    if ($i > 0) {$stmt .= " and "}
+    $stmt .= "$$pkeyname[$i] = $$pkeyval[$i]"
+  }
+  $stmt .= ";";
+  my $res = &writedb($dbh, $stmt);
+  return($res->ntuples > 0);
+}
+
+sub chktable($$\@\%@) {
+  my ($dbh, $tabname, $pkey, $pdata, @varname) = @_;
+  my $nxfields = @xfields = (); # List of existing fields
+  if (length($DB) > 0) {          # We only need to check if we're writing to a database
+    my $tabnamel = lc($tabname);  # Convert table name to lower case
+    my $stmt = "select column_name from information_schema.columns where table_name='$tabnamel'";
+    my $res = &writedb($dbh, $stmt);
+    $nxfields = $res->ntuples;
+    for (my $i = 0; $i < $nxfields; $i++) {
+      my $name = $res->getvalue($i, 0);
+      push @xfields, $name;
+    }
+  }
+  if ($nxfields == 0) {&mktable($dbh, $tabname, $pkey, $pdata, @varname)} # Create the table
+  else {
+    # See if the table requires updating
+    my $newfields = Set::Tiny->new(&lclist(@varname));
+    my $oldfields = Set::Tiny->new(&lclist(@xfields));
+    if (!$newfields->is_subset($oldfields)) { #Then we need to add fields
+      my $addset = $newfields->difference($oldfields);
+      &writedb($dbh, "begin;"); # Add the new fields as a single transaction
+      foreach my $varname (@varname) {
+        if ($addset->has(lc($varname))) {
+          my $type = &sqltype($$pdata{"type", $varname});
+          my $stmt = "alter table add column $varname $type";
+          if ($$pdata{"is_vector", $name}) {$stmt .= "[]"}
+          $stmt .= ";";
+          &writedb($dbh, $stmt);
+        }
+      }
+      &writedb($dbh, "commit;"); # Finish the transaction
+    }
+  }
+}
 
 sub datadict($$$\%) {
   my ($dbh, $project, $grvname, $pmmldoc) = @_;
   if ($$pmmldoc[0] ne "PMML") {die} # If the root element isn't labeled PMML then there is a problem
   my ($datadict) = &getelem($pmmldoc, "DataDictionary"); # Data dictionary element
   my @datafields = &getelem($datadict, "DataField");     # List of data field elements
+  my @fldnames = ("Optype", "DataType", "Label");
+  my %data; # Data type hash
+
+  for my $name (@DATAKEYS, @DATAFLDS, "Class") {$data{"type", $name} = "str"}
 
   # Enter the individual fields into the data dictionary
   foreach my $field (@datafields) {
@@ -300,31 +362,21 @@ sub datadict($$$\%) {
     my $label = $attrib{"displayName"};  # Field label
     my $optype = $attrib{"optype"};      # categorical or continuous
     my $datatype = $attrib{"dataType"};  # Field data type
-    my %type;                            # Data type hash
-    my @fmtval = ();                     # List of formatted values
-
-    # Format the values for INSERT statement
-    foreach my $value ($project, $grvname, $name, $optype, $datatype, $label) {
-      push @fmtval, &sqlfmt($value, "str")}
-    my $values = join(", ", @fmtval);
-
-    # Generate and submit the INSERT statement
-    my $stmt = "insert into $DATADICT values ($values);";
-    &writedb($dbh, $stmt);
+    my @pkval = ($project, $grvname, $name);
+    $data{"value", $grvname, "Optype"} = $optype;
+    $data{"value", $grvname, "DataType"} = $datatype;
+    $data{"value", $grvname, "Label"} = $label;
+    &insdata($dbh, $DATADICT, $grvname, \@DATAKEYS, \@pkval, \%type, "Optype", "DataType", "Label");
 
     # For categorical fields, enter the individual classes into the class dictionary
     if ($optype eq "categorical") {
       my @cats = &getelem($field, "Value");   # List of class elements
       foreach my $cat (@cats) {
-        my %attrib = &getattrib($cat);        # Attribute hash
-        my $catval = $attrib{"value"};        # Class value
-        my $label = $attrib{"displayValue"};  # Class label
-        my @fmtval = ();                      # List of formatted values
-        foreach my $value ($project, $grvname, $name, $catval, $label) {
-          push @fmtval, &sqlfmt($value, "str")}
-        my $values = join(", ", @fmtval);
-        my $stmt = "insert into $CLASSDICT values ($values);";
-        &writedb($dbh, $stmt);
+        my %attrib = &getattrib($cat);                     # Attribute hash
+        my $catval = $attrib{"value"};                     # Class value
+        my $label = $attrib{"displayValue"};               # Class label
+        my @pkval = ($project, $grvname, $name, $catval);  # Primary key values
+        &insdata($dbh, $CLASSDICT, $grvname, \@CLSKEYS, \@pkval, \%type, $label);
       }
     }
   }
@@ -367,68 +419,105 @@ sub getelem_re(\@$) {
   return @elem;
 }
 
+sub getval($$$) {
+  my $narg = @args = @_;
+  my $grvname;
+  if ($narg == 3) {$grvname = shift @args}
+  my ($name, $pdata) = @args;
+  my $type = $$pdata{"type", $name}; # Field type
+  my $value;
+  my $is_vector = $$pdata{"is_vector", $name};
+  my $sqlval = $BLANK;
+  if (!defined($type)) {$type = "str"}
+  if (defined($grvname)) {$value = $$pdata{"value", $grvname, $name}}
+  else {$value = $$pdata{"value", $name}}
+  if ($is_vector) {
+    my $line = "'{"; # Open with a curly brace
+    my $first = true;  # Set to false after processing first element
+    foreach my $elem (@$value) {
+      if (!$first) {$line .= ","} # Separate values with commas
+      if (length($line) > $WRAPLEN) { # Wrap overly long lines
+        $sqlval .= $line . "\n";
+        $line = "    "; # Indent
+      } elsif (!$first) {$line .= $SPACE}
+      $line .= &sqlfmt($elem, $type); # Add formatted value to line
+      if ($first) {$first = false}
+    }
+    $sqlval .= "$line}'"; # Add line to statement
+  } else {$sqlval = &sqlfmt($value, $type)} # We're dealing with a scalar
+  return($sqlval);
+}
+
 sub insdata($$$\@\@\%@) {
   my ($dbh, $tabname, $grvname, $pkeyname, $pkeyval, $pdata, @varname) = @_;
-  my $nkey = @$pkeyname;                        # List of primary key field names
-  my $nvar = @varname;                          # List of data field names
-  my $stmt = "insert into $tabname values (\n"; # Start generating SQL statement
-
-  # Add primary key field values to statement
-  for (my $ikey = 0; $ikey < $nkey; $ikey++) {
-    $stmt .= "  '$$pkeyval[$ikey]', /* $$pkeyname[$ikey] */\n";
-  }
-  # Add data field values to statement
-  for (my $ivar = 0; $ivar < $nvar; $ivar++) {
-    my $name = $varname[$ivar];        # Field name
-    my $type = $$pdata{"type", $name}; # Field type
-    my $last = ($ivar == $nvar - 1);   # Last field indicator
-    if (!exists($$pdata{"value", $grvname, $name})) {
-      $stmt .= "  NULL";
-    }
-    elsif ($$pdata{"is_vector", $name}) { # We're dealing with a vector instead of a scalar
-      my $line = "  '{"; # Open with a curly brace
-      my $first = true;  # Set to false after processing first element
-      foreach my $value (@{$$pdata{"value", $grvname, $name}}) {
-        if ($first) {$first = false}
-        else {$line .= ", "} # Separate values with commas
-        if (length($line) > $WRAPLEN) { # Wrap overly long lines
-          $stmt .= $line . "\n";
-          $line = "    "; # Indent
-        }
-        $line .= &sqlfmt($value, $type{$name}); # Add formatted value to line
+  if (&chkrecord($dbh, $tabname, $pkeyname, $pkeyval)) {
+    if ($OVERRIDE) { # We update the record
+      my $stmt = "update $tabname set (";
+      foreach my $varname (@varname) {
+        my $value = &getval($grvname, $varname, $pdata);
+        $stmt .= "\n  $varname = $value";
       }
-      $stmt .= "$line}'"; # Add line to statement
-    } else { # We're dealing with a scalar
-      my $value = $$pdata{"value", $grvname, $name};
-      $stmt .= "  " . &sqlfmt($value, $type);
+      $stmt .= ") where " . &whereclse($pkeyname, $pkeyval, $pdata) . ";";
+      &writedb($dbh, $stmt);
     }
-    if ($last) {
-      $stmt .= ");"; # End of statement
+  } else {
+    my $first = true;
+    my $nkey = @$pkeyname;                 # List of primary key field names
+    my $nvar = @varname;                   # List of data field names
+    my $stmt = "insert into $tabname (\n"; # Start generating SQL statement
+    my $line = $SPACE;
+    foreach my $name (@$pkeyname, @varname) {
+      if ($first) {$first = false}
+      else {
+        $line .= ",";
+      }
+      if (length($line) > $WRAPLEN) {
+        $stmt .= "$line\n";
+        $line = "  ";
+      } else {$line .= $SPACE}
+      $line .= $name;
     }
-    else {
-      $stmt .= ",";  # We separate values with commas
+    $stmt .= "$line) values (\n";
+    # Add primary key field values to statement
+    for (my $ikey = 0; $ikey < $nkey; $ikey++) {
+      $stmt .= "  '$$pkeyval[$ikey]', /* $$pkeyname[$ikey] */\n";
     }
-    $stmt .= " /* $name $type */\n";  # Helpful comment
+    for (my $ivar = 0; $ivar < $nvar; $ivar++) {
+      my $name = $varname[$ivar];        # Field name
+      my $type = $$pdata{"type", $name}; # Field type
+      my $last = ($ivar == $nvar - 1);   # Last field indicator
+      my $value = &getval($grvname, $name, $pdata);
+      $stmt .= "  $value";
+      if ($last) {$stmt .= ");"}        # End of statement
+      else {$stmt .= ","}               # We separate values with commas
+      $stmt .= " /* $name $type */\n";  # Helpful comment
+    }
+    &writedb($dbh, $stmt); # Print or execute statement
   }
-  &writedb($dbh, $stmt); # Print or execute statement
+}
+
+sub lclist(@) {
+  my @outlist = ();
+  foreach my $str (@_) {push @outlist, lc($str)}
+  return @outlist;
 }
 
 sub mkclsdict($) {
   my ($dbh) = @_;
-  my @pkey = ("Project", "Grove", "FieldName", "Class");      # Primary key fields
-  my @datafields = ("Label");                                 # Data field
-  my %flddata;                                                # Convenient hash
-  $flddata{"type", "Label"} = "str";                          # Declare Label as text string
-  &mktable($dbh, $CLASSDICT, \@pkey, \%flddata, @datafields); # Create the table
+  my @pkey = ("Project", "Grove", "FieldName", "Class");       # Primary key fields
+  my @datafields = ("Label");                                  # Data field
+  my %flddata;                                                 # Convenient hash
+  $flddata{"type", "Label"} = "str";                           # Declare Label as text string
+  &chktable($dbh, $CLASSDICT, \@pkey, \%flddata, @datafields); # Create the table
 }
 
 sub mkdatadict($) {
   my ($dbh) = @_;
-  my @pkey = ("Project", "Grove", "FieldName");                     # Primary key fields
-  my @datafields = ("Optype", "DataType", "Label");                 # Data fields
-  my %flddata;                                                      # Convenient hash
-  foreach my $name (@datafields) {$flddata{"type", $name} = "str"}  # Declare data fields aas text
-  &mktable($dbh, $DATADICT, \@pkey, \%flddata, @datafields);        # Create the table
+  my @pkey = ("Project", "Grove", "FieldName");                      # Primary key fields
+  my @datafields = ("Optype", "DataType", "Label");                  # Data fields
+  my %flddata;                                                       # Convenient hash
+  foreach my $name (@datafields) {$flddata{"type", $name} = "str"}   # Declare data fields aas text
+  &chktable($dbh, $DATADICT, \@pkey, \%flddata, @datafields);        # Create the table
 }
 
 sub mkperftab($%) {
@@ -440,24 +529,24 @@ sub mkperftab($%) {
     $tabdata{"type", "ModelType"} = "str"; # Declare ModelType as text string
     foreach my $field (@fields) {$tabdata{"type", $field} ="dbl"} # Declare the rest as double
     unshift @fields, "ModelType";          # Prepend ModelType to the list of stat fields
-    &mktable($dbh, $PERFTAB, \@PERFKEYS, \%tabdata, @fields); # Create the table
+    &chktable($dbh, $PERFTAB, \@PERFKEYS, \%tabdata, @fields); # Create the table
   }
 }
 
 sub mkscmtab($) {
   my ($dbh) = @_;
-  my @pkey = ("Project", "Grove", "ModelID", "FieldName"); # Primary key fields
-  my @datafields = ("UsageType", "Importance");            # Data fields
-  my %tabdata;                                             # Convenient hash
-  $tabdata{"type", "ModelID"} = "int";                     # Declare ModelID as integrer
-  $tabdata{"type", "UsageType"} = "str";                   # Declare UsageType as text
-  $tabdata{"type", "Importance"} = "dbl";                  # Declare Importance as double
-  &mktable($dbh, $SCMTAB, \@pkey, \%tabdata, @datafields); # Create the table
+  my @pkey = ("Project", "Grove", "ModelID", "FieldName");  # Primary key fields
+  my @datafields = ("UsageType", "Importance");             # Data fields
+  my %tabdata;                                              # Convenient hash
+  $tabdata{"type", "ModelID"} = "int";                      # Declare ModelID as integrer
+  $tabdata{"type", "UsageType"} = "str";                    # Declare UsageType as text
+  $tabdata{"type", "Importance"} = "dbl";                   # Declare Importance as double
+  &chktable($dbh, $SCMTAB, \@pkey, \%tabdata, @datafields); # Create the table
 }
 
-sub mktable($$\@\%@) {
+sub mktable($$$$@) {
   my ($dbh, $tabname, $pkey, $pdata, @varname) = @_;
-  my $stmt = "create table if not exists $tabname (\n";   # Start generating SQL statement
+  my $stmt = "create table $tabname (\n";   # Start generating SQL statement
   if (length(@$pkey) > 0) {    # Declare primary keys if there are any
     my $typestr = "text";      # Default type for primary key fields
     foreach my $key (@$pkey) { # But we can override it as the need arises
@@ -507,24 +596,17 @@ sub perfdata_in($$$\$\%) {
     my $perfstats = $$results{"performance-stats"};  # Reference to performance stats element
     my $nsamp = @sampname = keys(%$perfstats);       # List of sample names
     if ($nsamp > 0) { # If there aren't any then skip
+      my %data;
+      foreach my $key (@PKEYS, "SampleID") {$data{"type", $key} = "str"}
+      $data{"type", "ModelID"} = "int";
+      foreach my $statname (@statnames) {$data{"type", $statname} = "dbl"}
       foreach my $sampname (@sampname) {
+        my @pkval = ($project, $grvname, $$pnmod, $sampname);
         my $samprec = $$perfstats{$sampname};  # Reference to sample record
         my @statnames = keys(%$samprec);       # List of performance stat names
-        # Generate INSERT statement
-        my $stmt = "insert into $PERFTAB (\n"; # We specify only the defined fields
-        $stmt .= "  " . join(", ", @PERFKEYS, "ModelType");
         foreach my $statname (@statnames) {
-          $stmt .= ",\n  $statname"; # For ease of reading, each stat name is put on its own line
-        }
-        $stmt .= ") values (\n";     # Close the list of field names and start list of values
-        my @keys = ("'$project'", "'$grvname'", "$$pnmod", "'$sampname'"); # List of key values
-        $stmt .= "  " . join(", ", @keys, "'$modtype'"); # Add key values to statement
-        # Add stat values to statement
-        foreach my $statname (@statnames) {
-          $stmt .= ",\n  $$samprec{$statname}"; # Each stat value is on its own line
-        }
-        $stmt .= ");";         # Finish the statement
-        &writedb($dbh, $stmt); # Write or execute it
+          $data{"value", $grvname, $statname} = $$samprec{$statname}}
+        &insdata($dbh, $PERFTAB, $grvname, \@PERFKEYS, \@pkval, \%data, @statnames);
       }
       $$pnmod++; # Increment the model number
     }
@@ -579,6 +661,10 @@ sub scmdata($$$\%) {
   my $nmod = 0; # Serial number
   if ($$pmmldoc[0] ne "PMML") {die} # If the root element name isn't "PMML", we have a problem.
   my @modlist = &getelem_re($pmmldoc, "Model"); # List of model elements
+  my %data;
+  foreach my $name (@PKEYS, "FieldName") {$data{"type", $name} = "str"}
+  $data{"type", "ModelID"} = "int";
+  $data{"type", "Importance"} = "dbl";
   foreach my $model (@modlist) {
     my ($schema) = &getelem($model, "MiningSchema");  # MiningSchema element
     my @fieldlist = &getelem($schema, "MiningField"); # List of MiningField elements
@@ -593,14 +679,11 @@ sub scmdata($$$\%) {
         if ($imp == 0 && $usageType eq "active") {next}
         $imp *= 100;
       }
-      my $nval = @value = ($project, $grvname, $nmod, $name, $usageType, $imp); # List of values
-      my @vartype = ("str", "str", "int", "str", "str", "dbl"); # List of data types
-      my @fmtval = (); # List of formatted values
-      for (my $i = 0; $i < $nval; $i++) {
-        push @fmtval, &sqlfmt($value[$i], $vartype[$i]);
-      }
-      $fmtvals = join(", ", @fmtval);
-      &writedb($dbh, "insert into $SCMTAB values ($fmtvals);");
+      my @pkval = ($project, $grvname, $nmod, $name);
+      $data{"value", $grvname, "UsageType"} = $usageType;
+      $data{"value", $grvname, "Importance"} = $imp;
+      my @value = ($usageType, $imp); # List of values
+      &insdata($dbh, $SCMTAB, $grvname, \@SCMKEYS, \@pkval, \%data, "UsageType", "Importance");
     }
     $nmod++; # Increment serial number
   }
@@ -694,6 +777,19 @@ sub sqltype($) {
   else {die "$spmtype\n"};
 }
 
+sub whereclse($$$) {
+  my ($pname, $pval, $pdata) = @_;
+  my $nnames = @$pname;
+  my $clause = $BLANK;
+  for (my $i = 0; $i < $nnames; $i++) {
+    my $name = $$pname[$i];
+    my $value = &getval($name, $pdata);
+    if ($i > 0) {$clause .= " and "}
+    $clause .= "$name = $value";
+  }
+  return $clause;
+}
+
 sub writedb($$) {
   my ($dbh, $stmt) = @_;
   my $isdb = (length($DB) > 0);
@@ -704,6 +800,7 @@ sub writedb($$) {
     if ($status == PGRES_BAD_RESPONSE) {die "Bad response: $stmt\n"}
     elsif ($status == PGRES_NONFATAL_ERROR) {die "Nonfatal error: $stmt\n"}
     elsif ($status == PGRES_FATAL_ERROR) {die "Fatal error: $stmt\n"}
+    return $res;
   } else {&writeln($dbh, $stmt)} # Otherwise, we're writing to a text stream
 }
 
