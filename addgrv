@@ -300,14 +300,16 @@ foreach my $grvname ($grvset->members) {
 sub chkrecord($$$$) {
   my ($dbh, $tabname, $pkeyname, $pkeyval) = @_;
   if (length($DB) == 0) {return $false}
-    my $stmt = "select count(*) from $tabname where ";
+  my $nkey = @$pkeyname;
+  my $stmt = "select count(*) from $tabname where ";
   for (my $i = 0; $i < $nkey; $i++) {
     if ($i > 0) {$stmt .= " and "}
-    $stmt .= "$$pkeyname[$i] = $$pkeyval[$i]"
+    $stmt .= "$$pkeyname[$i] = '$$pkeyval[$i]'";
   }
   $stmt .= ";";
   my $res = &writedb($dbh, $stmt);
-  return($res->ntuples > 0);
+  my $count = $res->getvalue(0,0);
+  return($count > 0);
 }
 
 sub chktable($$\@\%@) {
@@ -366,7 +368,7 @@ sub datadict($$$\%) {
     $data{"value", $grvname, "Optype"} = $optype;
     $data{"value", $grvname, "DataType"} = $datatype;
     $data{"value", $grvname, "Label"} = $label;
-    &insdata($dbh, $DATADICT, $grvname, \@DATAKEYS, \@pkval, \%type, "Optype", "DataType", "Label");
+    &insdata($dbh, $DATADICT, $grvname, \@DATAKEYS, \@pkval, \%data, "Optype", "DataType", "Label");
 
     # For categorical fields, enter the individual classes into the class dictionary
     if ($optype eq "categorical") {
@@ -376,7 +378,7 @@ sub datadict($$$\%) {
         my $catval = $attrib{"value"};                     # Class value
         my $label = $attrib{"displayValue"};               # Class label
         my @pkval = ($project, $grvname, $name, $catval);  # Primary key values
-        &insdata($dbh, $CLASSDICT, $grvname, \@CLSKEYS, \@pkval, \%type, $label);
+        &insdata($dbh, $CLASSDICT, $grvname, \@CLSKEYS, \@pkval, \%data, "Label");
       }
     }
   }
@@ -597,6 +599,7 @@ sub perfdata_in($$$\$\%) {
     my $nsamp = @sampname = keys(%$perfstats);       # List of sample names
     if ($nsamp > 0) { # If there aren't any then skip
       my %data;
+      $data{"value", $grvname, "ModelType"} = $modtype;
       foreach my $key (@PKEYS, "SampleID") {$data{"type", $key} = "str"}
       $data{"type", "ModelID"} = "int";
       foreach my $statname (@statnames) {$data{"type", $statname} = "dbl"}
@@ -606,7 +609,7 @@ sub perfdata_in($$$\$\%) {
         my @statnames = keys(%$samprec);       # List of performance stat names
         foreach my $statname (@statnames) {
           $data{"value", $grvname, $statname} = $$samprec{$statname}}
-        &insdata($dbh, $PERFTAB, $grvname, \@PERFKEYS, \@pkval, \%data, @statnames);
+        &insdata($dbh, $PERFTAB, $grvname, \@PERFKEYS, \@pkval, \%data, "ModelType", @statnames);
       }
       $$pnmod++; # Increment the model number
     }
