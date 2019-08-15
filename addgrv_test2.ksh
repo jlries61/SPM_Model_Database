@@ -8,4 +8,7 @@ GROVES="ADLTCART1.GRV ADLTMARS1.GRV BOSALL1.GRV BOSBLEND1.GRV \
         DIGITCOMB1.GRV DIGITLGT1.GRV DIGITN1.GRV GBRF0.GRV \
         HODGMARS1.GRV HOSRF1.GRV"
 ./addgrv --db=$DB --grvpath=Groves --project=Test $GROVES
-#./addgrv --db=$DB --grvpath=Groves --project=Test $GROVES
+./addgrv --db=$DB --grvpath=Groves --project=Test $GROVES
+
+export i=2
+./dumpdb.sh
