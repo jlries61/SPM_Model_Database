@@ -1,4 +1,4 @@
-#!/bin/ksh
+#!/bin/sh
 DB=spm
 TABLIST="session, batsession, perfstats, datadict, classdict, modvars"
 psql -d $DB -c "drop table if exists $TABLIST"

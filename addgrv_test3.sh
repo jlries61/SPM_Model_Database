@@ -1,4 +1,4 @@
-#!/bin/ksh
+#!/bin/sh
 DB=spm
 TABLIST="session, batsession, perfstats, datadict, classdict, modvars"
 GROVES="ADLTCART1.GRV ADLTMARS1.GRV BOSALL1.GRV BOSBLEND1.GRV \
