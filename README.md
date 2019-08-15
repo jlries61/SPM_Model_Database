@@ -1,5 +1,5 @@
 # SPM_Model_Database
-Utilities to create, query, and maintain a PostgreSQL database to store SPM model data 
+Utilities to create, query, and maintain a PostgreSQL database to store SPM model data
 
 The intent is to create a set of Perl scripts to perform the functions above, easing the task of tracking the models built in the course of a project (which may run into the hundreds).  PostgreSQL was selected as the database engine as having the power and flexibility to perform the tasks required.
 
@@ -10,10 +10,12 @@ The scripts and documents included in this package (except for LICENSE) are copy
 * Perl 5.  The minimum version used for testing thus far is 5.28.2, but the language is intended to be generic.
 * PostgreSQL.  The system is being developed with version 11.4, but older ones will probably work.
 * SPM Ultra (non-GUI) 8.3 or higher.  This is proprietary software that must be licenced from [Salford Systems](https://www.salford-systems.com/products/spm).  It should be stressed that GUI SPM will not work for this purpose.
-* A Korn compatible shell to run the example scripts.
+* A POSIX compatible shell to run the example scripts.
 
 The following Perl modules are used:
+
 * boolean
+* English
 * File::Basename
 * File::Temp
 * Getopt::Long
@@ -50,7 +52,7 @@ After running this initial job, you can check the database to verify that the ap
 ```
 spm=> \dt
           List of relations
- Schema |    Name    | Type  | Owner 
+ Schema |    Name    | Type  | Owner
 --------+------------+-------+-------
  public | batsession | table | jries
  public | classdict  | table | jries
@@ -117,7 +119,7 @@ To inquire of the developer, post an [issue](https://github.com/jlries61/SPM_Mod
 
 The file `todos.txt`  will always contain the current todo list, but here is a summary
 
-* The script `addgrv` is incomplete at the present time.  The most glaring omissions are the current lack of a means to access a database remotely or one that the current user does not own.  There is also no ability to add new fields to the tables once they have been created, or to update existing records in the database.  These issues will be addressed in the near future.
+* The script `addgrv` is incomplete at the present time.  The most glaring omissions are the current lack of a means to access a database remotely or one that the current user does not own.  These issues will be addressed in the near future.
 * There will be a utility to generate a model summary including grove and model IDs, model type, user created memos, key settings, and user-selected performance stats.
 * There will be a utility to generate a data dictionary for a project or one or more individual groves.
 * There will be a utility to generate a command sequence to reproduce a requested model.
