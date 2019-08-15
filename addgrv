@@ -36,9 +36,10 @@ Required Perl modules:
 
 =head1 Synopsis
 
-addgrv [--db=<database name>] [--user=<username>] [--password=<database password>] [--dryrun] \
-       [--grvpath=<directory path>] [--project=<project name>] [--spmecho] [--override] \
-       [=spm=<SPM exec>] filename...
+S<addgrv [--db=<database name>] [--user=<username>] \
+S<       [--password=<database password>] [--dryrun] \
+S<       [--grvpath=<directory path>] [--project=<project name>] \
+S<       [--spmecho] [--override] [--spm=<SPM exec>] [--debug] filename...
 
 =head1 Options
 
@@ -46,7 +47,7 @@ addgrv [--db=<database name>] [--user=<username>] [--password=<database password
 
 =item --db=<database name>
 
-Specify the PostgreSQL database to use (default="spm")
+Specify the PostgreSQL database to use (default=F<spm>)
 
 =item --user=<username>
 
@@ -56,9 +57,14 @@ Specify the username for the PostgreSQL account to use (not yet implemented)
 
 Specify the password for the PostgreSQL account to use (not yet implemented)
 
+=item --debug
+
+Write the generated SQL statements to both the PostgreSQL database and standard output
+
 =item --dryrun
 
-Instead of writing to the PostgreSQL database, write the generated SQL statements to standard output.
+Instead of writing to the PostgreSQL database, write the generated SQL statements to standard output
+(overrides C<--debug>).
 
 =item --grvpath=<directory path>
 
@@ -75,8 +81,8 @@ Write SPM text output to standard output instead of suppressing it.
 
 =item --override
 
-If the grove has already been entered into the database, update the records instead of aborting
-(not yet implemented).
+If the grove has already been entered into the database, update the records.  Otherwise the new
+records will be ignored.
 
 =item --spm=<SPM exec>
 
@@ -179,6 +185,7 @@ $dbh = STDOUT;          # Replace with database handle if writing to database
 
 GetOptions(
   "db=s" => \$DB,               # Database name
+  "debug" => \$DEBUG,           # Write out all SQL statements
   "dryrun" => \$DRYRUN,         # Generate SQL code and write it to STDOUT instead of to the database
   "grvpath=s" => \$GRVPATH,     # Location of input grove files
   "project=s" => \$PROJECT,     # Project name
@@ -194,8 +201,11 @@ GetOptions(
 # any of them.
 if ($OSNAME eq "MSWin32") {$NULLDEV = "NUL:"}
 
-$ARGC = @ARGV;                  # Number of arguments
-if ($DRYRUN) {undef $DB}        # If DRYRUN is invoked, we don't do anything with the database
+$ARGC = @ARGV; # Number of arguments
+if ($DRYRUN) {
+  $DEBUG = false; # --dryrun and --debug are mutually exclusive
+  undef $DB;      # If DRYRUN is invoked, we don't do anything with the database
+}
 if ($SPMECHO) {$SPMFLAG="-e"}   # Use -e flag when running SPM
 
 # Check to see if $GRVPATH is a directory that can be read
@@ -221,6 +231,7 @@ foreach my $grove (@ARGV) {
   my ($grvname, $grvext) = split(/\./, $grove, 2);  # Basename and extension for the grove file
   if ($grvset->has($grvname)) {next}                # If we've already processed this grove,
                                                     # then skip
+  if ($DEBUG) {&writeln(STDOUT, "Processing $grove")}
   $grvset->insert($grvname);                        # Add the grove basename to the set
   my ($cmd, $cmdname) = tempfile(SUFFIX => ".cmd"); # Define temporary command file
   my ($sessfh, $sessrept) = tempfile();             # Define temporary session report file
@@ -315,11 +326,12 @@ sub chkrecord($$$$) {
 sub chktable($$\@\%@) {
   my ($dbh, $tabname, $pkey, $pdata, @varname) = @_;
   my $nxfields = @xfields = (); # List of existing fields
-  if (length($DB) > 0) {          # We only need to check if we're writing to a database
+  if (!$DRYRUN) { # We only need to check if we're writing to a database
     my $tabnamel = lc($tabname);  # Convert table name to lower case
     my $stmt = "select column_name from information_schema.columns where table_name='$tabnamel'";
-    my $res = &writedb($dbh, $stmt);
+    my $res = &writedb($dbh, $stmt); # Submit the query
     $nxfields = $res->ntuples;
+    # Read the response to the query
     for (my $i = 0; $i < $nxfields; $i++) {
       my $name = $res->getvalue($i, 0);
       push @xfields, $name;
@@ -328,16 +340,20 @@ sub chktable($$\@\%@) {
   if ($nxfields == 0) {&mktable($dbh, $tabname, $pkey, $pdata, @varname)} # Create the table
   else {
     # See if the table requires updating
+    # Since PostgreSQL converts all of the field names to lowercase...
     my $newfields = Set::Tiny->new(&lclist(@varname));
     my $oldfields = Set::Tiny->new(&lclist(@xfields));
-    if (!$newfields->is_subset($oldfields)) { #Then we need to add fields
-      my $addset = $newfields->difference($oldfields);
+    if (!$newfields->is_subset($oldfields)) {
+      #Then we need to add fields
+      my $addset = $newfields->difference($oldfields); # Set of fields to add
       &writedb($dbh, "begin;"); # Add the new fields as a single transaction
+      # Here, we use the original names, so we can use them to look things up in the data hash
       foreach my $varname (@varname) {
+        # But we convert the name to lowercase here to see if it's in $addset.
         if ($addset->has(lc($varname))) {
           my $type = &sqltype($$pdata{"type", $varname});
-          my $stmt = "alter table add column $varname $type";
-          if ($$pdata{"is_vector", $name}) {$stmt .= "[]"}
+          my $stmt = "alter table $tabname add column $varname $type";
+          if ($$pdata{"is_vector", $varname}) {$stmt .= "[]"}
           $stmt .= ";";
           &writedb($dbh, $stmt);
         }
@@ -359,12 +375,12 @@ sub datadict($$$\%) {
 
   # Enter the individual fields into the data dictionary
   foreach my $field (@datafields) {
-    my %attrib = &getattrib($field);     # Attributes
-    my $name = $attrib{"name"};          # Field name
-    my $label = $attrib{"displayName"};  # Field label
-    my $optype = $attrib{"optype"};      # categorical or continuous
-    my $datatype = $attrib{"dataType"};  # Field data type
-    my @pkval = ($project, $grvname, $name);
+    my %attrib = &getattrib($field);         # Attributes
+    my $name = $attrib{"name"};              # Field name
+    my $label = $attrib{"displayName"};      # Field label
+    my $optype = $attrib{"optype"};          # categorical or continuous
+    my $datatype = $attrib{"dataType"};      # Field data type
+    my @pkval = ($project, $grvname, $name); # Primary key values
     $data{"value", $grvname, "Optype"} = $optype;
     $data{"value", $grvname, "DataType"} = $datatype;
     $data{"value", $grvname, "Label"} = $label;
@@ -422,15 +438,16 @@ sub getelem_re(\@$) {
 }
 
 sub getval($$$) {
+  # There can be either two or three arguments
   my $narg = @args = @_;
   my $grvname;
-  if ($narg == 3) {$grvname = shift @args}
+  if ($narg == 3) {$grvname = shift @args} # If there are three, then the first is the grove name
   my ($name, $pdata) = @args;
   my $type = $$pdata{"type", $name}; # Field type
   my $value;
   my $is_vector = $$pdata{"is_vector", $name};
   my $sqlval = $BLANK;
-  if (!defined($type)) {$type = "str"}
+  if (!defined($type)) {$type = "str"}  # Default type
   if (defined($grvname)) {$value = $$pdata{"value", $grvname, $name}}
   else {$value = $$pdata{"value", $name}}
   if ($is_vector) {
@@ -452,13 +469,13 @@ sub getval($$$) {
 
 sub insdata($$$\@\@\%@) {
   my ($dbh, $tabname, $grvname, $pkeyname, $pkeyval, $pdata, @varname) = @_;
-  if (&chkrecord($dbh, $tabname, $pkeyname, $pkeyval)) {
+  if (&chkrecord($dbh, $tabname, $pkeyname, $pkeyval)) { #If the record already exists...
     if ($OVERRIDE) { # We update the record
       my $stmt = "update $tabname set (";
       foreach my $varname (@varname) {
         my $value = &getval($grvname, $varname, $pdata);
         $stmt .= "\n  $varname = $value";
-      }
+      } #...otherwise, we ignore it.
       $stmt .= ") where " . &whereclse($pkeyname, $pkeyval, $pdata) . ";";
       &writedb($dbh, $stmt);
     }
@@ -470,9 +487,7 @@ sub insdata($$$\@\@\%@) {
     my $line = $SPACE;
     foreach my $name (@$pkeyname, @varname) {
       if ($first) {$first = false}
-      else {
-        $line .= ",";
-      }
+      else {$line .= ",";}
       if (length($line) > $WRAPLEN) {
         $stmt .= "$line\n";
         $line = "  ";
@@ -664,6 +679,7 @@ sub scmdata($$$\%) {
   my $nmod = 0; # Serial number
   if ($$pmmldoc[0] ne "PMML") {die} # If the root element name isn't "PMML", we have a problem.
   my @modlist = &getelem_re($pmmldoc, "Model"); # List of model elements
+  # Define and fill the data hash
   my %data;
   foreach my $name (@PKEYS, "FieldName") {$data{"type", $name} = "str"}
   $data{"type", "ModelID"} = "int";
@@ -682,10 +698,10 @@ sub scmdata($$$\%) {
         if ($imp == 0 && $usageType eq "active") {next}
         $imp *= 100;
       }
-      my @pkval = ($project, $grvname, $nmod, $name);
+      my @pkval = ($project, $grvname, $nmod, $name); # Primary key values
       $data{"value", $grvname, "UsageType"} = $usageType;
       $data{"value", $grvname, "Importance"} = $imp;
-      my @value = ($usageType, $imp); # List of values
+      my @value = ($usageType, $imp);                 # List of values
       &insdata($dbh, $SCMTAB, $grvname, \@SCMKEYS, \@pkval, \%data, "UsageType", "Importance");
     }
     $nmod++; # Increment serial number
@@ -697,7 +713,7 @@ sub sessdata_init() {
   my @order = ();                    # This allows us to specify the order of the fields
   $data{"names"} = Set::Tiny->new(); # Set of field names
   $data{"nvar"} = 0;                 # Number of session settings fields
-  $data{"order"} = \@order;
+  $data{"order"} = \@order;          # Holds the order of field names
   return %data;
 }
 
@@ -795,16 +811,21 @@ sub whereclse($$$) {
 
 sub writedb($$) {
   my ($dbh, $stmt) = @_;
-  my $isdb = (length($DB) > 0);
-  if ($isdb) { # If we're writing to a database...
+  if (!$DRYRUN) { # If we're writing to a database...
     my $res = $dbh->exec($stmt);
     my $status = $res->resultStatus;
     # We'll make the error messages more informative later
-    if ($status == PGRES_BAD_RESPONSE) {die "Bad response: $stmt\n"}
-    elsif ($status == PGRES_NONFATAL_ERROR) {die "Nonfatal error: $stmt\n"}
-    elsif ($status == PGRES_FATAL_ERROR) {die "Fatal error: $stmt\n"}
+    my $error = "";
+    if ($status == PGRES_BAD_RESPONSE) {$error = "Bad response"}
+    elsif ($status == PGRES_NONFATAL_ERROR) {$error = "Nonfatal error"}
+    elsif ($status == PGRES_FATAL_ERROR) {$error = "Fatal error"}
+    if ($DEBUG) {&writeln(STDOUT, $stmt)}
+    if (length($error) > 0) {
+      my $mess = $dbh->errorMessage;
+      die "$mess\n";
+    }
     return $res;
-  } else {&writeln($dbh, $stmt)} # Otherwise, we're writing to a text stream
+  } else  {&writeln(STDOUT, $stmt)} # Otherwise, we're writing to a text stream
 }
 
 sub writeln($$) {
@@ -929,14 +950,6 @@ C<NULL>.
 These will be remedied in future versions of B<addgrv>.
 
 =over
-
-=item *
-At present, fields encountered after the tables are created cannot be inserted into the database
-unless it is dropped and recreated.  If such fields are encountered, the whole job will be aborted.
-
-=item *
-Since the C<--override> options is not yet impkemented, no means are yet provided to update existing
-records and processing of groves already present in the database will cause the job to be aborted.
 
 =item *
 Only local PostgreSQL databases owned by the current user can be accessed since the C<--username>
