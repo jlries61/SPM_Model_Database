@@ -4,3 +4,8 @@ Change log
 
 0.5.1: Set the null device to NUL: under native Windows builds of Perl.
        Under Cygwin, the null device is /dev/null.
+
+0.6:
+  * Enable interaction with a local Postgres database.
+  * Enable --override option.
+  * Enable creation of new fields in existing tables.
