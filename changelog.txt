@@ -9,3 +9,4 @@ Change log
   * Enable interaction with a local Postgres database.
   * Enable --override option.
   * Enable creation of new fields in existing tables.
+  * Enable --debug option, which writes all SQL statements to standard output in addition to executing them.
