@@ -1,11 +1,8 @@
 1.  Address addgrv errata as follows:
-  a.  Add ability to add new fields to the tables as they are encountered in grove files.
-  b.  Implement the --override option, allowing existing records to be updated.
-  c.  Add more graceful way to fail when the records to be added already exist.
-  d.  Implement the --host, --user, and --password options, allowing data to be written
+  a.  Implement the --host, --user, and --password options, allowing data to be written
       to remote databases as well as those not owned by the current user.
-  e.  Use ordered sets instead of unordered sets for ease of testing.
-  f.  Add data to describe variation in AUTOMATE batteries.
+  b.  Use ordered sets instead of unordered sets for ease of testing.
+  c.  Add data to describe variation in AUTOMATE batteries.
 
 2.  Create utility to generate leaderboards from performance stat table.  This would include project,
     grove, and model IDs, any user memos, the target variable, the number of predictors, and such
