@@ -1,0 +1,137 @@
+#!/usr/bin/perl
+
+# Module Declarations
+use boolean;      # Boolean support for Perl
+use Getopt::Long; # Extended processing of command line options
+use Pg;           # Perl5 extension for PostgreSQL
+use Text::CSV;    # comma-separated values manipulator
+
+#Subroutine Declarations
+sub lclist(@);    # Convert input list to lowercase
+sub sqlexec($$);  #Execute an SQL statement
+sub writedb($$);  # Write an SQL statement either to the database engine or STDOUT
+sub writeln($$);  # Write one line of text to the specified stream
+
+# Set Constants
+$ARGC = @ARGV;
+$BLANK = "";
+$COMMA = ",";
+$DLM = $COMMA;
+
+# Set Defaults
+$DB = "spm";            # Database name
+$DEBUG = false;
+$PROJECT = "";          # Optional project name
+
+GetOptions(
+  "db=s" => \$DB,               # Database name
+  "debug" => \$DEBUG,           # Invoke debug mode
+  "dlm=s" => \$DLM,             # Output delimiter
+  "modtype=s" => \$MODTYPES,    # List of model types
+  "target=s" => \$TARGET,       # Target variable
+  "perfstats=s" => \$PERFSTATS, # List of performance stats
+  "project=s" => \$PROJECT,     # Project name
+  "sessflds=s" => \$SESSFLDS,   # Session fields
+  "sortby=s" => \$SORTBY        # Field on which to sort (descending)
+    ) || die;
+
+if ($ARGC > 0) {
+  my $infile = $ARGV[0];
+  open STDOUT, ">", $infile || die "Failure to open output file $infile\n";
+}
+
+$dbh = Pg::connectdb("dbname=$DB");
+if ($dbh->status == PGRES_CONNECTION_BAD) {
+  die "Failure to connect to database $DB: $dbh->errorMessage\n"}
+
+@MODTYPES=split($COMMA, $MODTYPES);
+@SESSFLDS = split($COMMA, $SESSFLDS);
+@PERFSTATS = split($COMMA, $PERFSTATS);
+$invar = join($DLM, "grove", "modelid", "modeltype", "npred", @SESSFLDS, @PERFSTATS);
+$stmt = "with
+  predcount as (
+    select grove, modelid, count(*) as npred
+    from modvars
+    where usagetype = 'active'
+    group by grove, modelid),
+  tgt as (
+    select grove, modelid, fieldname as target
+    from modvars
+    where usagetype = 'predicted'),
+  mdata as (
+    select grove, modelid, target, npred
+    from predcount join tgt using (grove, modelid)),
+  pdata as (
+    select *
+    from mdata join perfstats using (grove, modelid)),
+  sess as (
+    select *
+    from session join batsession using (grove))
+  select $invar
+    from pdata join sess using (grove)";
+$whrclse = "where ";
+$anywhere = false;
+if (defined($TARGET)) {
+  my $target = lc($TARGET);
+  $whrclse .= "lower(target) = '$target'";
+  $anywhere = true;
+}
+if (defined($SORTBY)) {
+  if ($anywhere) {$whrclse .= " and "}
+  $whrclse .= "$SORTBY is not null";
+  $anywhere = true;
+}
+if (defined($MODTYPES)) {
+  my $ntypes = @MODTYPES;
+  my $first = true;
+  $whrclse .= " and ";
+  if ($ntypes > 1) {$whrclse .= "("}
+  foreach my $modtype (lclist(@MODTYPES)) {
+    if ($first) {$first = false}
+    else {$whrclse .= " or "}
+    $whrclse .= "ModelType = '$modtype'";
+  }
+  if ($ntypes > 1) {$whrclse .= ")"}
+}
+if ($anywhere) {$stmt .= "\n  $whrclse"}
+if (defined($SORTBY)) {$stmt .= "\n  order by $SORTBY desc"}
+$stmt .= ";";
+
+$res = &writedb($dbh, $stmt);
+$nfields = $res->nfields;
+@fname = ();
+for ($i = 0; $i < $nfields; $i++) {push @fname, $res->fname($i)}
+$csv = Text::CSV->new({sep_char=>$DLM, eol=>"\n"});
+$nrec = $res->ntuples;
+$csv->print(STDOUT, \@fname);
+for ($i = 0; $i < $nrec; $i++) {
+  my @values = $res->fetchrow;
+  $csv->print(STDOUT, \@values);
+}
+
+sub lclist(@) {
+  my @outlist = ();
+  foreach my $str (@_) {push @outlist, lc($str)}
+  return @outlist;
+}
+
+sub writedb($$) {
+  my ($dbh, $stmt) = @_;
+  my $res = $dbh->exec($stmt);
+  my $status = $res->resultStatus;
+  my $error = "";
+  if ($status == PGRES_BAD_RESPONSE) {$error = "Bad response"}
+  elsif ($status == PGRES_NONFATAL_ERROR) {$error = "Nonfatal error"}
+  elsif ($status == PGRES_FATAL_ERROR) {$error = "Fatal error"}
+  if ($DEBUG) {&writeln(STDOUT, $stmt)}
+  if (length($error) > 0) {
+    my $mess = $dbh->errorMessage;
+    die "$mess\n";
+  }
+  return $res;
+}
+
+sub writeln($$) {
+  my ($fh, $line) = @_;
+  print $fh "$line\n";
+}
