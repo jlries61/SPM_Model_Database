@@ -1,5 +1,76 @@
 #!/usr/bin/perl
 
+=head1 Name
+
+modstats - Generate SPM modeling summary report
+
+=head1 Version
+
+0.1
+
+=head1 Prerequisites
+
+B<PostgreSQL>
+
+Required Perl modules:
+
+=over
+
+=item * boolean;
+
+=item * Getopt::Long
+
+=item * Pg;
+
+=item * Text::CSV
+
+=back
+
+=head1 Synopsis
+
+S<modstats [--db=<database name>] [--debug] [--dlm=<delimiter>]   \
+S<         [--modtype=<model types>] [--target=<target variable>] \
+S<         [--perfstats=<performance stat fields>] \
+S<         [--project=<project name>] [--sortby=<field name>] \
+S<         [--sessflds=<session setting fields>] [<output file>]
+
+=head1 Options
+
+=over
+
+=item --db=<database name>
+
+Specify the PostgreSQL database to use (default=F<spm>)
+
+=item --debug
+
+Add the SQL submitted to the database to the output
+
+=item --dlm=<delimiter>
+
+Specify the delimiter in the output dataset (default=F<,>)
+
+=item --modtype=<model types>
+
+Display only models of the specifed type(s).  If more than one is specified, then the list must
+be comma-delimited.  By default, display all model types.
+
+=item --target=<target variable>
+
+Display only models with the specified target variable.
+
+=item --perfstats=<performance stat fields>
+
+Add the specified performance statistic fields to the output dataset.
+
+=item --project=<project name>
+
+Specify a project name on which to filter (default=blank)
+
+=back
+
+=cut
+
 # Module Declarations
 use boolean;      # Boolean support for Perl
 use Getopt::Long; # Extended processing of command line options
