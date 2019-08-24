@@ -6,11 +6,13 @@ addgrv - Extract data from a set of SPM grove files and store them in a PostgreS
 
 =head1 Version
 
-0.6
+0.61
 
 =head1 Prerequisites
 
 B<SPM> (non-GUI) 8.3 or higher.  Available from Salford Systems.
+
+B<PostgreSQL>
 
 Required Perl modules:
 
@@ -39,7 +41,8 @@ Required Perl modules:
 S<addgrv [--db=<database name>] [--user=<username>] \
 S<       [--password=<database password>] [--dryrun] \
 S<       [--grvpath=<directory path>] [--project=<project name>] \
-S<       [--spmecho] [--override] [--spm=<SPM exec>] [--debug] filename...
+S<       [--spmecho] [--override] [--spm=<SPM exec>] [--debug] \
+S<       <filename>...
 
 =head1 Options
 
