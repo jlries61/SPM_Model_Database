@@ -87,7 +87,6 @@ sub writedb($$);    # Write an SQL statement either to the database engine or ST
 sub writeln($$);    # Write one line of text to the specified stream
 
 # Set Constants
-$ARGC = @ARGV;
 $BLANK = "";
 $COMMA = ",";
 $DLM = $COMMA;
@@ -110,6 +109,7 @@ GetOptions(
   "sortby=s" => \$SORTBY        # Field on which to sort (descending)
     ) || die;
 
+$ARGC = @ARGV;
 if ($ARGC > 0) {
   my $infile = $ARGV[0];
   open STDOUT, ">", $infile || die "Failure to open output file $infile\n";
