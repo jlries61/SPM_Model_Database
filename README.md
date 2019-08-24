@@ -22,6 +22,7 @@ The following Perl modules are used:
 * JSON::Util
 * Pg
 * Set::Tiny
+* Text::CSV
 * XML::Parser
 
 ## How to Create the Database
@@ -91,7 +92,7 @@ To compare performance among the various models within the grove, one could do t
 
 ```
 spm=> select modelid,modeltype,mse,rmse,mad,mape,rsquared from perfstats where grove='BOSALL1' and sampleid='test' order by rsquared desc;
- modelid | modeltype  |   mse   |  rmse   |   mad   |   mape   | rsquared 
+ modelid | modeltype  |   mse   |  rmse   |   mad   |   mape   | rsquared
 ---------+------------+---------+---------+---------+----------+----------
  2       | rf         | 10.5105 |   3.242 | 1.98557 | 0.097268 |   0.8445
  0       | cart       |  13.472 | 3.67042 | 2.57948 | 0.127097 | 0.795443
@@ -102,16 +103,69 @@ spm=> select modelid,modeltype,mse,rmse,mad,mape,rsquared from perfstats where g
 (6 rows)
 ```
 
-We see here all of the common regression performance stats for the test sample, in descending order of R-squared.
+We see here all of the common regression performance stats for the test sample, in descending order
+of R-squared.
+
+### The `modstats` Script
+
+The `modstats` script produces a text dataset that reports model performance statistics and session
+fields stored in the database.  An example follows:
+
+```
+$ ./modstats --perfstats=rsquared,mse,mad,mape --sortby=rsquared --target=mv
+grove,modelid,modeltype,npred,rsquared,mse,mad,mape
+BOSALL1,3,mars,13,0.878065,11.8345,2.44874,0.129566
+BOSALL1,2,rf,7,0.860291,12.3289,2.31097,0.117031
+BOSMARS1,0,mars,8,0.851642,11.5927,2.46569,0.130708
+BOSALL1,1,treenet,13,0.850215,14.5376,2.47233,0.127288
+BOSALL1,2,rf,7,0.8445,10.5105,1.98557,0.097268
+BOSALL1,0,cart,13,0.835607,15.9553,2.86514,0.15798
+BOSBLEND1,0,treenet,12,0.824946,15.489,2.43309,0.119649
+BOSTN1,0,treenet,12,0.822828,14.9568,2.45891,0.124338
+BOSBLEND1,0,treenet,12,0.815388,11.2928,2.67238,0.159835
+BOSMARS1,0,mars,8,0.80643,15.1256,2.69864,0.144769
+BOSIRL1,0,treenet,10,0.800703,12.1911,2.7995,0.171631
+BOSALL1,0,cart,13,0.795443,13.472,2.57948,0.127097
+BOSTN1,0,treenet,12,0.789279,17.7696,2.73602,0.137756
+BOSIRL1,0,treenet,10,0.769713,20.3762,2.92661,0.150874
+BOSALL1,5,regression,13,0.768027,22.5143,3.40429,0.172683
+BOSALL1,4,pathseeker,13,0.744858,24.763,3.42158,0.168796
+BOSGPS4,7,pathseeker,12,0.740637,21.8953,3.27032,0.164163
+BOSGPS4,6,pathseeker,12,0.740637,21.8953,3.27032,0.164163
+BOSGPS4,5,pathseeker,12,0.740637,21.8953,3.27032,0.164163
+BOSGPS4,4,pathseeker,12,0.734964,22.3742,3.30957,0.166367
+BOSGPS4,3,pathseeker,12,0.734964,22.3742,3.30957,0.166367
+BOSGPS4,2,pathseeker,10,0.734173,22.441,3.31299,0.166687
+BOSREG1,0,regression,13,0.72377,21.5846,3.2823,0.16659
+BOSGPS4,1,pathseeker,8,0.723461,23.3453,3.34479,0.167422
+BOSGPS4,7,pathseeker,12,0.721399,23.5194,3.37764,0.170727
+BOSGPS4,5,pathseeker,12,0.721399,23.5194,3.37764,0.170727
+BOSGPS4,6,pathseeker,12,0.721399,23.5194,3.37764,0.170727
+BOSGPS4,2,pathseeker,10,0.716269,23.9525,3.40824,0.172848
+BOSGPS4,3,pathseeker,12,0.714559,24.0968,3.41836,0.173191
+BOSGPS4,4,pathseeker,12,0.714559,24.0968,3.41836,0.173191
+BOSGPS4,0,pathseeker,7,0.709691,24.5077,3.39709,0.172773
+BOSGPS4,1,pathseeker,8,0.705067,24.8981,3.42498,0.173123
+BOSALL1,3,mars,13,0.704335,19.4722,2.85223,0.152734
+BOSALL1,1,treenet,13,0.696988,19.9561,2.22087,0.100015
+BOSGPS4,0,pathseeker,7,0.690422,26.1344,3.50305,0.180099
+BOSALL1,4,pathseeker,13,0.577293,27.8391,3.35394,0.159816
+BOSALL1,5,regression,13,0.568051,28.4477,3.49347,0.170381
+BOSIRL1,1,pathseeker,10,0.174541,73.0379,6.20121,0.331078
+BOSIRL1,1,pathseeker,10,0.0908666,55.6121,5.68566,0.381071
+```
 
 ## Getting Help
 
-The script `addgrv` has built-in documentation (POD) which can be read via the `perldoc` command like so:
+The script `addgrv` has built-in documentation (POD) which can be read via the `perldoc` command like
+so:
 
 ```
 $ perldoc addgrv
 ```
 This will bring up a document that looks much like a UNIX manpage.
+
+The script `modstats` has like documentation.
 
 To inquire of the developer, post an [issue](https://github.com/jlries61/SPM_Model_Database/issues).
 
