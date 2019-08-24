@@ -6,7 +6,7 @@ modstats - Generate SPM modeling summary report
 
 =head1 Version
 
-0.1
+0.2
 
 =head1 Prerequisites
 
@@ -75,19 +75,23 @@ Specify a project name on which to filter (default=blank)
 use boolean;      # Boolean support for Perl
 use Getopt::Long; # Extended processing of command line options
 use Pg;           # Perl5 extension for PostgreSQL
-use Text::CSV;    # comma-separated values manipulator
+use Set::Tiny;    # Unordered set support
+use Text::CSV;    # Comma-separated values manipulator
 
 #Subroutine Declarations
-sub lclist(@);    # Convert input list to lowercase
-sub sqlexec($$);  #Execute an SQL statement
-sub writedb($$);  # Write an SQL statement either to the database engine or STDOUT
-sub writeln($$);  # Write one line of text to the specified stream
+sub chkflds($\@@);  # Check for existence of requested fields
+sub lclist(@);      # Convert input list to lowercase
+sub qjoin($@);      # Join the list, but quote the strings
+sub sqlexec($$);    # Execute an SQL statement
+sub writedb($$);    # Write an SQL statement either to the database engine or STDOUT
+sub writeln($$);    # Write one line of text to the specified stream
 
 # Set Constants
 $ARGC = @ARGV;
 $BLANK = "";
 $COMMA = ",";
 $DLM = $COMMA;
+@KEYS = ("project", "grove");
 
 # Set Defaults
 $DB = "spm";            # Database name
@@ -119,6 +123,10 @@ if ($dbh->status == PGRES_CONNECTION_BAD) {
 @SESSFLDS = split($COMMA, $SESSFLDS);
 @PERFSTATS = split($COMMA, $PERFSTATS);
 $invar = join($DLM, "grove", "modelid", "modeltype", "npred", @SESSFLDS, @PERFSTATS);
+
+&chkflds($dbh, \@SESSFLDS, session, batsession);
+&chkflds($dbh, \@PERFSTATS, perfstats);
+
 $stmt = "with
   predcount as (
     select grove, modelid, count(*) as npred
@@ -148,6 +156,8 @@ if (defined($TARGET)) {
   $anywhere = true;
 }
 if (defined($SORTBY)) {
+  my @SORTBY = $SORTBY;
+  &chkflds($dbh, \@SORTBY, perfstats);
   if ($anywhere) {$whrclse .= " and "}
   $whrclse .= "$SORTBY is not null";
   $anywhere = true;
@@ -184,6 +194,36 @@ sub lclist(@) {
   my @outlist = ();
   foreach my $str (@_) {push @outlist, lc($str)}
   return @outlist;
+}
+
+sub chkflds($\@@) {
+  my ($dbh, $pfld, @tables) = @_;
+  my $nfields = @$pfld;
+  if ($nfields == 0) {return}
+  my $fields = &qjoin($COMMA, @$pfld);
+  my $qtables = &qjoin($COMMA, @tables);
+  my $tables = join($COMMA, @tables);
+  my $stmt = "select column_name from information_schema.columns where table_name in ($qtables);";
+  my $res = &writedb($dbh, $stmt);
+  my $nxfields = $res->ntuples;
+  my @xfields = ();
+  for (my $i = 0; $i < $nxfields; $i++) {
+    my $name = $res->getvalue($i, 0);
+    push @xfields, $name;
+  }
+  my $xfields = Set::Tiny->new(&lclist(@xfields));
+  foreach my $field (&lclist(@$pfld)) {
+    if (!$xfields->has($field)) {die "Field $field not present in $tables\n"}
+  }
+}
+
+sub qjoin($@) {
+  my ($dlm, @list) = @_;
+  my @qlist = ();
+  foreach my $item (@list) {
+    push @qlist, "'$item'";
+  }
+  return join($dlm, @qlist);
 }
 
 sub writedb($$) {
