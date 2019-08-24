@@ -6,7 +6,7 @@ addgrv - Extract data from a set of SPM grove files and store them in a PostgreS
 
 =head1 Version
 
-0.61
+0.7
 
 =head1 Prerequisites
 
@@ -38,11 +38,10 @@ Required Perl modules:
 
 =head1 Synopsis
 
-S<addgrv [--db=<database name>] [--user=<username>] \
-S<       [--password=<database password>] [--dryrun] \
-S<       [--grvpath=<directory path>] [--project=<project name>] \
-S<       [--spmecho] [--override] [--spm=<SPM exec>] [--debug] \
-S<       <filename>...
+S<addgrv [--db=E<lt>database nameE<gt>] [--host=E<lt>hostnameE<gt>] [--user=E<lt>usernameE<gt>] \>
+S<       [--password=E<lt>database passwordE<gt>] [--dryrun] [--override] \>
+S<       [--grvpath=E<lt>directory pathE<gt>] [--project=E<lt>project nameE<gt>] \>
+S<       [--spmecho] [--spm=E<lt>SPM execE<gt>] [--debug] E<lt>filenameE<gt>...>
 
 =head1 Options
 
@@ -52,13 +51,17 @@ S<       <filename>...
 
 Specify the PostgreSQL database to use (default=F<spm>)
 
+=item --host=<hostname>
+
+Specify the host on which the PostgreSQL database resides (default=F<localhost>)
+
 =item --user=<username>
 
-Specify the username for the PostgreSQL account to use (not yet implemented)
+Specify the username for the PostgreSQL account to use (mandatory if remote host specified)
 
 =item --password=<database password>
 
-Specify the password for the PostgreSQL account to use (not yet implemented)
+Specify the password for the PostgreSQL account to use (mandatory if remote host specified)
 
 =item --debug
 
@@ -191,11 +194,12 @@ GetOptions(
   "debug" => \$DEBUG,           # Write out all SQL statements
   "dryrun" => \$DRYRUN,         # Generate SQL code and write it to STDOUT instead of to the database
   "grvpath=s" => \$GRVPATH,     # Location of input grove files
+  "host=s" => \$HOSTNAME,       # Remote hostname
   "project=s" => \$PROJECT,     # Project name
   "spmecho" => \$SPMECHO,       # Write SPM classic output to STDOUT
   "override" => \$OVERRIDE,     # Overwrite existing records in the database
                                 # (not currently implemented)
-  "password=s" => \$PASSWORD,     # Password for database account (not currently implemented)
+  "password=s" => \$PASSWORD,   # Password for database account (not currently implemented)
   "spm=s" => \$SPM,             # Name of SPM exec (must be non-GUI 8.3 or above)
   "user=s" => \$USERNAME        # Database username
     ) || die;
@@ -281,7 +285,11 @@ foreach $varname (@{$sessdata{"order"}}) {
 
 # Time to connect to the database (maybe)
 if (defined($DB)) {
-  $dbh = Pg::connectdb("dbname=$DB");
+  my $opts = "dbname=$DB";
+  if (defined($HOSTNAME)) {$opts .= " host=$HOSTNAME"}
+  if (defined($USERNAME)) {$opts .= " user=$USERNAME"}
+  if (defined($PASSWORD)) {$opts .= " password='$PASSWORD'"}
+  $dbh = Pg::connectdb($opt);
   if ($dbh->status == PGRES_CONNECTION_BAD) {
     die "Failure to connect to database $DB: $dbh->errorMessage\n"}
 }
@@ -950,13 +958,9 @@ C<NULL>.
 
 =head1 Errata
 
-These will be remedied in future versions of B<addgrv>.
+This will be remedied in future versions of B<addgrv>.
 
 =over
-
-=item *
-Only local PostgreSQL databases owned by the current user can be accessed since the C<--username>
-and C<--password> options are not yet implemented.
 
 =item *
 Due to the use of unordered sets, the order in which C<INSERT>s are done varies from run to run.
