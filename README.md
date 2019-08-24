@@ -106,7 +106,7 @@ spm=> select modelid,modeltype,mse,rmse,mad,mape,rsquared from perfstats where g
 We see here all of the common regression performance stats for the test sample, in descending order
 of R-squared.
 
-### The `modstats` Script
+## The `modstats` Script
 
 The `modstats` script produces a text dataset that reports model performance statistics and session
 fields stored in the database.  An example follows:
