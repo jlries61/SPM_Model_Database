@@ -123,6 +123,7 @@ use Set::Tiny;                    # Unordered set support
 use XML::Parser;                  # A Perl module for parsing XML documents
 
 #Subroutine Declarations
+sub addopt(\$$$);                  # Add option to option string
 sub chkrecord($$$$);              # Return true if record already in the table, otherwise false
 sub chktable($$\@\%@);            # Check to see if the target table already exists.  If it does.
                                   # then add any new fields that may be required.  Otherwise,
@@ -284,14 +285,15 @@ foreach $varname (@{$sessdata{"order"}}) {
 @pkey = ("project", "grove");
 
 # Time to connect to the database (maybe)
-if (defined($DB)) {
-  my $opts = "dbname=$DB";
-  if (defined($HOSTNAME)) {$opts .= " host=$HOSTNAME"}
-  if (defined($USERNAME)) {$opts .= " user=$USERNAME"}
-  if (defined($PASSWORD)) {$opts .= " password='$PASSWORD'"}
-  $dbh = Pg::connectdb($opt);
-  if ($dbh->status == PGRES_CONNECTION_BAD) {
-    die "Failure to connect to database $DB: $dbh->errorMessage\n"}
+$opt = $BLANK;
+&addopt(\$opt, "host", $HOSTNAME);
+&addopt(\$opt, "user", $USERNAME);
+&addopt(\$opt, "password", $PASSWORD);
+&addopt(\$opt, "dbname", $DB);
+$dbh = Pg::connectdb($opt);
+if ($dbh->status == PGRES_CONNECTION_BAD) {
+  my $errmsg = $dbh->errorMessage;
+  die "Failure to connect to database $DB: $errmsg\n";
 }
 
 # Declare the session settings tables, if they do not already exist,
@@ -318,6 +320,15 @@ foreach my $grvname ($grvset->members) {
 }
 
 # See the forward declarations above for descriptions of the subroutines
+
+sub addopt(\$$$) {
+  my ($popt, $optname, $str) = @_;
+  if (length($optname) == 0) {die}
+  if (length($str) == 0) {return}
+  if (length($$popt) > 0) {$$popt .= $SPACE}
+  if ($optname eq "password") {$str = "'$str'"}
+  $$popt .= "$optname=$str";
+}
 
 sub chkrecord($$$$) {
   my ($dbh, $tabname, $pkeyname, $pkeyval) = @_;
