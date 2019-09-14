@@ -122,7 +122,7 @@ if ($dbh->status == PGRES_CONNECTION_BAD) {
 @MODTYPES=split($COMMA, $MODTYPES);
 @SESSFLDS = split($COMMA, $SESSFLDS);
 @PERFSTATS = split($COMMA, $PERFSTATS);
-$invar = join($DLM, "grove", "modelid", "modeltype", "npred", @SESSFLDS, @PERFSTATS);
+$invar = join($DLM, "grove", "modelid", "modeltype", "npred", "SampleID", @SESSFLDS, @PERFSTATS);
 
 &chkflds($dbh, \@SESSFLDS, session, batsession);
 &chkflds($dbh, \@PERFSTATS, perfstats);
