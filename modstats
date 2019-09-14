@@ -129,25 +129,25 @@ $invar = join($DLM, "grove", "modelid", "modeltype", "npred", @SESSFLDS, @PERFST
 
 $stmt = "with
   predcount as (
-    select grove, modelid, count(*) as npred
+    select project, grove, modelid, count(*) as npred
     from modvars
     where usagetype = 'active'
-    group by grove, modelid),
+    group by project, grove, modelid),
   tgt as (
-    select grove, modelid, fieldname as target
+    select project, grove, modelid, fieldname as target
     from modvars
     where usagetype = 'predicted'),
   mdata as (
-    select grove, modelid, target, npred
-    from predcount join tgt using (grove, modelid)),
+    select project, grove, modelid, target, npred
+    from predcount join tgt using (project, grove, modelid)),
   pdata as (
     select *
-    from mdata join perfstats using (grove, modelid)),
+    from mdata join perfstats using (project, grove, modelid)),
   sess as (
     select *
-    from session join batsession using (grove))
+    from session join batsession using (project, grove))
   select $invar
-    from pdata join sess using (grove)";
+    from pdata join sess using (project, grove)";
 $whrclse = "where ";
 $anywhere = false;
 if (defined($TARGET)) {
@@ -165,7 +165,7 @@ if (defined($SORTBY)) {
 if (defined($MODTYPES)) {
   my $ntypes = @MODTYPES;
   my $first = true;
-  $whrclse .= " and ";
+  if ($anywhere) {$whrclse .= " and "}
   if ($ntypes > 1) {$whrclse .= "("}
   foreach my $modtype (lclist(@MODTYPES)) {
     if ($first) {$first = false}
@@ -173,6 +173,12 @@ if (defined($MODTYPES)) {
     $whrclse .= "ModelType = '$modtype'";
   }
   if ($ntypes > 1) {$whrclse .= ")"}
+  $anywhere = true;
+}
+if (defined($PROJECT)) {
+  if ($anywhere) {$whrclse .= " and "}
+  $whrclse .= "project = '$PROJECT'";
+  $anywhere = true;
 }
 if ($anywhere) {$stmt .= "\n  $whrclse"}
 if (defined($SORTBY)) {$stmt .= "\n  order by $SORTBY desc"}
