@@ -28,7 +28,8 @@ Required Perl modules:
 
 =head1 Synopsis
 
-S<modstats [--db=<database name>] [--debug] [--dlm=<delimiter>]   \
+S<modstats [--db=<database name>] [--host=E<lt>hostnameE<gt>] [--user=E<lt>usernameE<gt>] \>
+S<         [--password=E<lt>database passwordE<gt>] [--debug] [--dlm=<delimiter>]   \
 S<         [--modtype=<model types>] [--target=<target variable>] \
 S<         [--perfstats=<performance stat fields>] \
 S<         [--project=<project name>] [--sortby=<field name>] \
@@ -41,6 +42,10 @@ S<         [--sessflds=<session setting fields>] [<output file>]
 =item --db=<database name>
 
 Specify the PostgreSQL database to use (default=F<spm>)
+
+=item --host=<hostname>
+
+Specify the host on which the PostgreSQL database resides (default=F<localhost>)
 
 =item --debug
 
@@ -55,6 +60,10 @@ Specify the delimiter in the output dataset (default=F<,>)
 Display only models of the specifed type(s).  If more than one is specified, then the list must
 be comma-delimited.  By default, display all model types.
 
+=item --password=<database password>
+
+Specify the password for the PostgreSQL account to use (mandatory if remote host specified)
+
 =item --target=<target variable>
 
 Display only models with the specified target variable.
@@ -66,6 +75,10 @@ Add the specified performance statistic fields to the output dataset.
 =item --project=<project name>
 
 Specify a project name on which to filter (default=blank)
+
+=item --user=<username>
+
+Specify the username for the PostgreSQL account to use (mandatory if remote host specified)
 
 =back
 
@@ -79,6 +92,7 @@ use Set::Tiny;    # Unordered set support
 use Text::CSV;    # Comma-separated values manipulator
 
 #Subroutine Declarations
+sub addopt(\$$$);   # Add option to option string
 sub chkflds($\@@);  # Check for existence of requested fields
 sub lclist(@);      # Convert input list to lowercase
 sub qjoin($@);      # Join the list, but quote the strings
@@ -91,6 +105,7 @@ $BLANK = "";
 $COMMA = ",";
 $DLM = $COMMA;
 @KEYS = ("project", "grove");
+$SPACE = " ";
 
 # Set Defaults
 $DB = "spm";            # Database name
@@ -101,6 +116,9 @@ GetOptions(
   "db=s" => \$DB,               # Database name
   "debug" => \$DEBUG,           # Invoke debug mode
   "dlm=s" => \$DLM,             # Output delimiter
+  "host=s" => \$HOSTNAME,       # Remote hostname
+  "user=s" => \$USERNAME,       # username
+  "password=s" => \$PASSWORD,   # password
   "modtype=s" => \$MODTYPES,    # List of model types
   "target=s" => \$TARGET,       # Target variable
   "perfstats=s" => \$PERFSTATS, # List of performance stats
@@ -114,10 +132,18 @@ if ($ARGC > 0) {
   my $infile = $ARGV[0];
   open STDOUT, ">", $infile || die "Failure to open output file $infile\n";
 }
+# Time to connect to the database (maybe)
+$opt = $BLANK;
+&addopt(\$opt, "host", $HOSTNAME);
+&addopt(\$opt, "user", $USERNAME);
+&addopt(\$opt, "password", $PASSWORD);
+&addopt(\$opt, "dbname", $DB);
+$dbh = Pg::connectdb($opt);
 
-$dbh = Pg::connectdb("dbname=$DB");
 if ($dbh->status == PGRES_CONNECTION_BAD) {
-  die "Failure to connect to database $DB: $dbh->errorMessage\n"}
+    my $errmsg = $dbh->errorMessage;
+    die "Failure to connect to database $DB: $errmsg\n";
+}
 
 @MODTYPES=split($COMMA, $MODTYPES);
 @SESSFLDS = split($COMMA, $SESSFLDS);
@@ -194,6 +220,15 @@ $csv->print(STDOUT, \@fname);
 for ($i = 0; $i < $nrec; $i++) {
   my @values = $res->fetchrow;
   $csv->print(STDOUT, \@values);
+}
+
+sub addopt(\$$$) {
+  my ($popt, $optname, $str) = @_;
+  if (length($optname) == 0) {die}
+  if (length($str) == 0) {return}
+  if (length($$popt) > 0) {$$popt .= $SPACE}
+  if ($optname eq "password") {$str = "'$str'"}
+  $$popt .= "$optname=$str";
 }
 
 sub lclist(@) {
