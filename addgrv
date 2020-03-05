@@ -272,6 +272,9 @@ foreach my $grove (@ARGV) {
   &sessproc($sessrept, $grvname, \%sessdata);
   $jsondata{$grvname} = JSON::Util->decode($jsonfile);
   $pmmldata{$grvname} = $xmlparse->parsefile($pmmlfile);
+
+  # Delete scratch files
+  unlink $cmdname, $sessrept, $jsonfile, $pmmlfile
 }
 # Separate the battery session options into their own table
 $nvar = @varlist = (); #Fields that go in the regular table
