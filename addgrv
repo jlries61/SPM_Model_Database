@@ -167,6 +167,7 @@ sub xtype($);                     # Extract base type label from vector specific
 
 #Define constants
 $BLANK = "";
+$COMMA = ",";
 $SPACE = " ";
 $CLASSDICT = "ClassDict";                    # Name of class dictionary table
 $DATADICT = "DataDict";                      # Name of data dictionary table
@@ -496,12 +497,15 @@ sub insdata($$$\@\@\%@) {
   my ($dbh, $tabname, $grvname, $pkeyname, $pkeyval, $pdata, @varname) = @_;
   if (&chkrecord($dbh, $tabname, $pkeyname, $pkeyval)) { #If the record already exists...
     if ($OVERRIDE) { # We update the record
-      my $stmt = "update $tabname set (";
+      my $stmt = "update $tabname set ";
+      my $first = true;
       foreach my $varname (@varname) {
         my $value = &getval($grvname, $varname, $pdata);
+        if ($first) {$first = false}
+        else {$stmt .= $COMMA}
         $stmt .= "\n  $varname = $value";
       } #...otherwise, we ignore it.
-      $stmt .= ") where " . &whereclse($pkeyname, $pkeyval, $pdata) . ";";
+      $stmt .= " where " . &whereclse($pkeyname, $pkeyval, $pdata) . ";";
       &writedb($dbh, $stmt);
     }
   } else {
@@ -827,7 +831,9 @@ sub whereclse($$$) {
   my $clause = $BLANK;
   for (my $i = 0; $i < $nnames; $i++) {
     my $name = $$pname[$i];
-    my $value = &getval($name, $pdata);
+    my $type = $$pdata{"type", $name};
+    my $value = $$pval[$i];
+    if ($type == "str" or !defined($type)) {$value = "'$value'"}
     if ($i > 0) {$clause .= " and "}
     $clause .= "$name = $value";
   }
