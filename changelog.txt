@@ -10,3 +10,28 @@ Change log
   * Enable --override option.
   * Enable creation of new fields in existing tables.
   * Enable --debug option, which writes all SQL statements to standard output in addition to executing them.
+
+0.7:
+  * Additions to addgrv:
+    1.  Implement --host, --user, and --password options.
+    2.  Fix synopsis.
+    3.  Reorder the connection options string so that the database name is last inst
+ead of first.
+    4.  Add a new subroutine addopt to better manage the options string.
+  * Additions and corrections to modstats:
+    1.  Add code to modstats to check for existence of requested fields.
+    2.  Move definition of $ARGC to after the parsing of the command line options.
+    3.  Enable --project option
+    4.  Add SampleID field to output
+  * Updates to README.md
+
+0.8:
+  * Corrections to addgrv:
+    Reorder the connection options string so that the database name is last instead of first.
+    Also add a new subroutine addopt to better manage the options string.
+    This allows connections to remote databases.
+  * Enable --project option in modstats.
+  * Add SampleID to the modstats output.
+  * Add network support to modstats.
+  * Correct bugs in addgrv relating to the update of records when the
+    --override option was issued.
