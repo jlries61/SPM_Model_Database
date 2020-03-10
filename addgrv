@@ -129,6 +129,8 @@ sub chktable($$\@\%@);            # Check to see if the target table already exi
                                   # then add any new fields that may be required.  Otherwise,
                                   # create the table
 sub datadict($$$\%);              # Insert records into the data dictionary table
+sub fmtstr($);                    # Double apostrophes inside of strings and surround with single
+                                  # quotes
 sub getattrib($);                 # Return a hash containing the attributes for the given XML element
 sub getelem(\@$);                 # Return a list of children of the given XML element with the
                                   # given name
@@ -316,11 +318,13 @@ if ($nbat > 0) {&chktable($dbh, "batsession", \@pkey, \%sessdata, @batlist)}
 # Insert new records into the appropriate tables
 foreach my $grvname ($grvset->members) {
   my @pkeyval = ($PROJECT, $grvname);
+  &writedb($dbh, "begin;"); # Begin the transaction
   &insdata($dbh, "session", $grvname, \@pkey, \@pkeyval, \%sessdata, @varlist);
   &insdata($dbh, "batsession", $grvname, \@pkey, \@pkeyval, \%sessdata, @batlist);
   &perfdata($dbh, $PROJECT, $grvname, $jsondata{$grvname});
   &datadict($dbh, $PROJECT, $grvname, $pmmldata{$grvname});
   &scmdata($dbh, $PROJECT, $grvname, $pmmldata{$grvname});
+  &writedb($dbh, "commit;"); # End the transaction
 }
 
 # See the forward declarations above for descriptions of the subroutines
@@ -330,7 +334,7 @@ sub addopt(\$$$) {
   if (length($optname) == 0) {die}
   if (length($str) == 0) {return}
   if (length($$popt) > 0) {$$popt .= $SPACE}
-  if ($optname eq "password") {$str = "'$str'"}
+  if ($optname eq "password") {$str = &fmtstr($str)}
   $$popt .= "$optname=$str";
 }
 
@@ -424,6 +428,12 @@ sub datadict($$$\%) {
       }
     }
   }
+}
+
+sub fmtstr($) {
+  my ($str) = @_;
+  $str=~s/'/''/g;
+  return "'$str'";
 }
 
 sub getattrib($) {
@@ -811,7 +821,7 @@ sub sqlfmt($$) {
   if (!defined($value) || $value eq ".") {return "NULL"} # Undefined is the same as missing
   if ($type eq "str") {
     $value=~s/'/''/g; # Any apostrophes in the string have to be doubled
-    return "'$value'";
+    return &fmtstr($value);
   }
   return $value;
 }
@@ -833,7 +843,7 @@ sub whereclse($$$) {
     my $name = $$pname[$i];
     my $type = $$pdata{"type", $name};
     my $value = $$pval[$i];
-    if ($type == "str" or !defined($type)) {$value = "'$value'"}
+    if ($type == "str" or !defined($type)) {$value = &fmtstr($value)}
     if ($i > 0) {$clause .= " and "}
     $clause .= "$name = $value";
   }
