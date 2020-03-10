@@ -35,3 +35,6 @@ ead of first.
   * Add network support to modstats.
   * Correct bugs in addgrv relating to the update of records when the
     --override option was issued.
+
+0.81:
+  * Correct quoting of strings in generated WHERE clauses (apostrophese have to be doubled).
