@@ -165,6 +165,7 @@ sub sqltype($);                   # Convert type labels in session report to the
 sub whereclse($$$);               # Generate a WHERE clause
 sub writedb($$);                  # Write an SQL statement either to the database engine or STDOUT
 sub writeln($$);                  # Write one line of text to the specified stream
+sub xtable($$);                   # Check to see if the referenced table exists yet
 sub xtype($);                     # Extract base type label from vector specification
 
 #Define constants
@@ -233,6 +234,21 @@ my %pmmldata;                                  # PMML/Translate output stored he
 my $grvset = Set::Tiny->new();                 # Set of groves to read
 $xmlparse = XML::Parser->new(Style => "Tree"); # XML parser
 
+# The project and grove fields appear everywhere so...
+@pkey = ("project", "grove");
+
+# Time to connect to the database (maybe)
+$opt = $BLANK;
+&addopt(\$opt, "host", $HOSTNAME);
+&addopt(\$opt, "user", $USERNAME);
+&addopt(\$opt, "password", $PASSWORD);
+&addopt(\$opt, "dbname", $DB);
+$dbh = Pg::connectdb($opt);
+if ($dbh->status == PGRES_CONNECTION_BAD) {
+  my $errmsg = $dbh->errorMessage;
+  die "Failure to connect to database $DB: $errmsg\n";
+}
+
 # Process the input grove files
 foreach my $grove (@ARGV) {
   # Calculate full pathname for grove file
@@ -240,9 +256,11 @@ foreach my $grove (@ARGV) {
   if (defined($GRVPATH)) {$grvpath = "$GRVPATH/$grove"}
 
   my ($grvname, $grvext) = split(/\./, $grove, 2);  # Basename and extension for the grove file
+  my @pkeyval = ($PROJECT, $grvname);
   if ($grvset->has($grvname)) {next}                # If we've already processed this grove,
                                                     # then skip
   if ($DEBUG) {&writeln(STDOUT, "Processing $grove")}
+  if (!$OVERRIDE and &chkrecord($dbh, $PERFTAB, \@pkey, \@pkeyval)) {next}
   $grvset->insert($grvname);                        # Add the grove basename to the set
   my ($cmd, $cmdname) = tempfile(SUFFIX => ".cmd"); # Define temporary command file
   my ($sessfh, $sessrept) = tempfile();             # Define temporary session report file
@@ -287,21 +305,6 @@ foreach $varname (@{$sessdata{"order"}}) {
   else {$nvar = push @varlist, $varname}
 }
 
-# The project and grove fields appear everywhere so...
-@pkey = ("project", "grove");
-
-# Time to connect to the database (maybe)
-$opt = $BLANK;
-&addopt(\$opt, "host", $HOSTNAME);
-&addopt(\$opt, "user", $USERNAME);
-&addopt(\$opt, "password", $PASSWORD);
-&addopt(\$opt, "dbname", $DB);
-$dbh = Pg::connectdb($opt);
-if ($dbh->status == PGRES_CONNECTION_BAD) {
-  my $errmsg = $dbh->errorMessage;
-  die "Failure to connect to database $DB: $errmsg\n";
-}
-
 # Declare the session settings tables, if they do not already exist,
 # assuming any fields are defined for them
 if ($nvar > 0) {&chktable($dbh, "session", \@pkey, \%sessdata, @varlist)}
@@ -340,7 +343,7 @@ sub addopt(\$$$) {
 
 sub chkrecord($$$$) {
   my ($dbh, $tabname, $pkeyname, $pkeyval) = @_;
-  if (length($DB) == 0) {return $false}
+  if (!&xtable($dbh, $tabname)) {return $false}
   my $nkey = @$pkeyname;
   my $stmt = "select count(*) from $tabname where ";
   for (my $i = 0; $i < $nkey; $i++) {
@@ -872,6 +875,16 @@ sub writedb($$) {
 sub writeln($$) {
   my ($fh, $line) = @_;
   print $fh "$line\n";
+}
+
+sub xtable($$) {
+  my ($dbh, $tabname) = @_;
+  if ($dbh eq STDOUT) {return false}
+  $tabname = lc($tabname);
+  my $stmt = "select * from information_schema.columns where table_name='$tabname'";
+  my $res = &writedb($dbh, $stmt); # Submit the query
+  my $nxfields = $res->ntuples;
+  return $nxfields > 0;
 }
 
 sub xtype($) {
