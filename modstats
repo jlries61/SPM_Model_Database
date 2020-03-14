@@ -80,6 +80,10 @@ Specify a project name on which to filter (default=blank)
 
 Specify the username for the PostgreSQL account to use (mandatory if remote host specified)
 
+=item --sampleid=learn|test|holdout
+
+Specify the sample to use.  By defaultm all are included
+
 =back
 
 =cut
@@ -124,13 +128,19 @@ GetOptions(
   "perfstats=s" => \$PERFSTATS, # List of performance stats
   "project=s" => \$PROJECT,     # Project name
   "sessflds=s" => \$SESSFLDS,   # Session fields
-  "sortby=s" => \$SORTBY        # Field on which to sort (descending)
+  "sortby=s" => \$SORTBY,       # Field on which to sort (descending)
+  "sampleid=s" => \$SAMPLE      # Sample ID to select
     ) || die;
 
 $ARGC = @ARGV;
 if ($ARGC > 0) {
   my $infile = $ARGV[0];
   open STDOUT, ">", $infile || die "Failure to open output file $infile\n";
+}
+if (defined($SAMPLE)) {
+  $SAMPLE = lc($SAMPLE);
+  if (!($SAMPLE eq "learn" || $SAMPLE eq "test" || $SAMPLE eq "holdout")) {
+    die "--sampleid=$SAMPLE not supported\n"}
 }
 # Time to connect to the database (maybe)
 $opt = $BLANK;
@@ -204,6 +214,11 @@ if (defined($MODTYPES)) {
 if (defined($PROJECT)) {
   if ($anywhere) {$whrclse .= " and "}
   $whrclse .= "project = '$PROJECT'";
+  $anywhere = true;
+}
+if (defined($SAMPLE)) {
+  if ($anywhere) {$whrclse .= " and "}
+  $whrclse .= "sampleid = '$SAMPLE'";
   $anywhere = true;
 }
 if ($anywhere) {$stmt .= "\n  $whrclse"}
