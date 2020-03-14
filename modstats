@@ -28,12 +28,14 @@ Required Perl modules:
 
 =head1 Synopsis
 
-S<modstats [--db=<database name>] [--host=E<lt>hostnameE<gt>] [--user=E<lt>usernameE<gt>] \>
-S<         [--password=E<lt>database passwordE<gt>] [--debug] [--dlm=<delimiter>]   \
-S<         [--modtype=<model types>] [--target=<target variable>] \
-S<         [--perfstats=<performance stat fields>] \
-S<         [--project=<project name>] [--sortby=<field name>] \
-S<         [--sessflds=<session setting fields>] [<output file>]
+S<modstats [--db=E<lt>database nameE<gt>] [--host=E<lt>hostnameE<gt>] \>
+S<         [--user=E<lt>usernameE<gt>] [--password=E<lt>database passwordE<gt>] \>
+S<         [--debug] [--dlm=E<lt>delimiterE<gt>] [--modtype=E<lt>model typesE<gt>] \>
+S<         [--target=E<lt>target variableE<gt>] \>
+S<         [--perfstats=E<lt>performance stat fieldsE<gt>] \>
+S<         [--sampleid=learn|test|holdout] [--project=E<lt>project nameE<gt>] \>
+S<         [--sortby=E<lt>field nameE<gt>] [--sessflds=E<lt>session setting fieldsE<gt>] \>
+S<         [E<lt>output fileE<gt>] >
 
 =head1 Options
 
