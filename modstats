@@ -84,6 +84,11 @@ Specify the username for the PostgreSQL account to use (mandatory if remote host
 
 Specify the sample to use.  By defaultm all are included
 
+=item --sortby=<field name>
+
+Sort records in descending order of the field selected.  This is intended to provide a convenient way
+to rank models based on a particular performance statistic.
+
 =back
 
 =cut
