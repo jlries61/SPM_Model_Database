@@ -34,8 +34,8 @@ S<         [--debug] [--dlm=E<lt>delimiterE<gt>] [--modtype=E<lt>model typesE<gt
 S<         [--target=E<lt>target variableE<gt>] \>
 S<         [--perfstats=E<lt>performance stat fieldsE<gt>] \>
 S<         [--sampleid=learn|test|holdout] [--project=E<lt>project nameE<gt>] \>
-S<         [--sortby=E<lt>field nameE<gt>] [--sessflds=E<lt>session setting fieldsE<gt>] \>
-S<         [E<lt>output fileE<gt>] >
+S<         [--grove=E<lt>grove nameE<gt>]  [--sortby=E<lt>field nameE<gt>] \>
+S<         [--sessflds=E<lt>session setting fieldsE<gt>] [E<lt>output fileE<gt>] >
 
 =head1 Options
 
@@ -78,10 +78,6 @@ Add the specified performance statistic fields to the output dataset.
 
 Specify a project name on which to filter (default=blank)
 
-=item --user=<username>
-
-Specify the username for the PostgreSQL account to use (mandatory if remote host specified)
-
 =item --sampleid=learn|test|holdout
 
 Specify the sample to use.  By defaultm all are included
@@ -90,6 +86,10 @@ Specify the sample to use.  By defaultm all are included
 
 Sort records in descending order of the field selected.  This is intended to provide a convenient way
 to rank models based on a particular performance statistic.
+
+=item --user=<username>
+
+Specify the username for the PostgreSQL account to use (mandatory if remote host specified)
 
 =back
 
@@ -134,6 +134,7 @@ GetOptions(
   "target=s" => \$TARGET,       # Target variable
   "perfstats=s" => \$PERFSTATS, # List of performance stats
   "project=s" => \$PROJECT,     # Project name
+  "grove=s" => \$GROVE,         # Grove name
   "sessflds=s" => \$SESSFLDS,   # Session fields
   "sortby=s" => \$SORTBY,       # Field on which to sort (descending)
   "sampleid=s" => \$SAMPLE      # Sample ID to select
@@ -221,6 +222,11 @@ if (defined($MODTYPES)) {
 if (defined($PROJECT)) {
   if ($anywhere) {$whrclse .= " and "}
   $whrclse .= "project = '$PROJECT'";
+  $anywhere = true;
+}
+if (defined($GROVE)) {
+  if ($anywhere) {$whrclse .= " and "}
+  $whrclse .= "grove = '$GROVE'";
   $anywhere = true;
 }
 if (defined($SAMPLE)) {
