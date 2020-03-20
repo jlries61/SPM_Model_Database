@@ -31,7 +31,7 @@ Required Perl modules:
 S<modstats [--db=E<lt>database nameE<gt>] [--host=E<lt>hostnameE<gt>] \>
 S<         [--user=E<lt>usernameE<gt>] [--password=E<lt>database passwordE<gt>] \>
 S<         [--debug] [--dlm=E<lt>delimiterE<gt>] [--modtype=E<lt>model typesE<gt>] \>
-S<         [--target=E<lt>target variableE<gt>] \>
+S<         [--target=E<lt>target variableE<gt>] [--list-projects] \>
 S<         [--perfstats=E<lt>performance stat fieldsE<gt>] \>
 S<         [--sampleid=learn|test|holdout] [--project=E<lt>project nameE<gt>] \>
 S<         [--grove=E<lt>grove nameE<gt>]  [--sortby=E<lt>field nameE<gt>] \>
@@ -57,6 +57,11 @@ Add the SQL submitted to the database to the output
 
 Specify the delimiter in the output dataset (default=F<,>)
 
+=item --list-projects
+
+Display the projects available in the database instead of the usual table.  The --dlm, --modtype,
+--target, --perfstats, --sampleid, --project, --grove, --sortby, and --sessflds are ignored.
+
 =item --modtype=<model types>
 
 Display only models of the specifed type(s).  If more than one is specified, then the list must
@@ -80,7 +85,7 @@ Specify a project name on which to filter (default=blank)
 
 =item --sampleid=learn|test|holdout
 
-Specify the sample to use.  By defaultm all are included
+Specify the sample to use.  By default, all are included
 
 =item --sortby=<field name>
 
@@ -137,13 +142,14 @@ GetOptions(
   "grove=s" => \$GROVE,         # Grove name
   "sessflds=s" => \$SESSFLDS,   # Session fields
   "sortby=s" => \$SORTBY,       # Field on which to sort (descending)
-  "sampleid=s" => \$SAMPLE      # Sample ID to select
+  "sampleid=s" => \$SAMPLE,     # Sample ID to select
+  "list-projects" =>\$LISTPROJ  # List projects
     ) || die;
 
 $ARGC = @ARGV;
 if ($ARGC > 0) {
-  my $infile = $ARGV[0];
-  open STDOUT, ">", $infile || die "Failure to open output file $infile\n";
+  my $outfile = $ARGV[0];
+  open STDOUT, ">", $outfile || die "Failure to open output file $infile\n";
 }
 if (defined($SAMPLE)) {
   $SAMPLE = lc($SAMPLE);
@@ -161,6 +167,17 @@ $dbh = Pg::connectdb($opt);
 if ($dbh->status == PGRES_CONNECTION_BAD) {
     my $errmsg = $dbh->errorMessage;
     die "Failure to connect to database $DB: $errmsg\n";
+}
+
+if ($LISTPROJ) {
+  my $stmt = "select distinct project from perfstats;";
+  my $res = &writedb($dbh, $stmt);
+  my $nrec = $res->ntuples;
+  for (my $i = 0; $i < $nrec; $i++) {
+    my @values = $res->fetchrow;
+    &writeln(STDOUT, $values[0]);
+  }
+  exit;
 }
 
 @MODTYPES=split($COMMA, $MODTYPES);
