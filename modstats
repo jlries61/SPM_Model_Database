@@ -32,7 +32,7 @@ S<modstats [--db=E<lt>database nameE<gt>] [--host=E<lt>hostnameE<gt>] \>
 S<         [--user=E<lt>usernameE<gt>] [--password=E<lt>database passwordE<gt>] \>
 S<         [--debug] [--dlm=E<lt>delimiterE<gt>] [--modtype=E<lt>model typesE<gt>] \>
 S<         [--target=E<lt>target variableE<gt>] [--list-projects] \>
-S<         [--perfstats=E<lt>performance stat fieldsE<gt>] \>
+S<         [--list-groves] [--perfstats=E<lt>performance stat fieldsE<gt>] \>
 S<         [--sampleid=learn|test|holdout] [--project=E<lt>project nameE<gt>] \>
 S<         [--grove=E<lt>grove nameE<gt>]  [--sortby=E<lt>field nameE<gt>] \>
 S<         [--sessflds=E<lt>session setting fieldsE<gt>] [E<lt>output fileE<gt>] >
@@ -60,7 +60,14 @@ Specify the delimiter in the output dataset (default=F<,>)
 =item --list-projects
 
 Display the projects available in the database instead of the usual table.  The --dlm, --modtype,
---target, --perfstats, --sampleid, --project, --grove, --sortby, and --sessflds are ignored.
+--target, --perfstats, --sampleid, --project, --grove, --sortby, --sessflds, and --list-groves
+options are ignored.
+
+=item --list-groves
+
+Display the groves available in the database associated with the given project, instead of the usual
+table.  The --dlm, --modtype, --target, --perfstats, --sampleid, --project, --grove, --sortby, and
+--sessflds options are ignored.
 
 =item --modtype=<model types>
 
@@ -129,21 +136,22 @@ $DEBUG = false;
 $PROJECT = "";          # Optional project name
 
 GetOptions(
-  "db=s" => \$DB,               # Database name
-  "debug" => \$DEBUG,           # Invoke debug mode
-  "dlm=s" => \$DLM,             # Output delimiter
-  "host=s" => \$HOSTNAME,       # Remote hostname
-  "user=s" => \$USERNAME,       # username
-  "password=s" => \$PASSWORD,   # password
-  "modtype=s" => \$MODTYPES,    # List of model types
-  "target=s" => \$TARGET,       # Target variable
-  "perfstats=s" => \$PERFSTATS, # List of performance stats
-  "project=s" => \$PROJECT,     # Project name
-  "grove=s" => \$GROVE,         # Grove name
-  "sessflds=s" => \$SESSFLDS,   # Session fields
-  "sortby=s" => \$SORTBY,       # Field on which to sort (descending)
-  "sampleid=s" => \$SAMPLE,     # Sample ID to select
-  "list-projects" =>\$LISTPROJ  # List projects
+  "db=s" => \$DB,                # Database name
+  "debug" => \$DEBUG,            # Invoke debug mode
+  "dlm=s" => \$DLM,              # Output delimiter
+  "host=s" => \$HOSTNAME,        # Remote hostname
+  "user=s" => \$USERNAME,        # username
+  "password=s" => \$PASSWORD,    # password
+  "modtype=s" => \$MODTYPES,     # List of model types
+  "target=s" => \$TARGET,        # Target variable
+  "perfstats=s" => \$PERFSTATS,  # List of performance stats
+  "project=s" => \$PROJECT,      # Project name
+  "grove=s" => \$GROVE,          # Grove name
+  "sessflds=s" => \$SESSFLDS,    # Session fields
+  "sortby=s" => \$SORTBY,        # Field on which to sort (descending)
+  "sampleid=s" => \$SAMPLE,      # Sample ID to select
+  "list-projects" => \$LISTPROJ, # List projects
+  "list-groves" => \$LISTGRVS    # List groves
     ) || die;
 
 $ARGC = @ARGV;
@@ -171,6 +179,17 @@ if ($dbh->status == PGRES_CONNECTION_BAD) {
 
 if ($LISTPROJ) {
   my $stmt = "select distinct project from perfstats;";
+  my $res = &writedb($dbh, $stmt);
+  my $nrec = $res->ntuples;
+  for (my $i = 0; $i < $nrec; $i++) {
+    my @values = $res->fetchrow;
+    &writeln(STDOUT, $values[0]);
+  }
+  exit;
+}
+
+if ($LISTGRVS) {
+  my $stmt = "select distinct grove from perfstats where project='$PROJECT';";
   my $res = &writedb($dbh, $stmt);
   my $nrec = $res->ntuples;
   for (my $i = 0; $i < $nrec; $i++) {
