@@ -44,3 +44,6 @@ ead of first.
     * Increment version to 0.3
     * Add new option --list-projects
     * Increment version to 0.4
+    * Add new options --list-groves and --help
+    * Increment version to 0.5.
+
