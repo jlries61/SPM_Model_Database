@@ -28,6 +28,8 @@ Required Perl modules:
 
 =head1 Synopsis
 
+S<modstats --help >
+
 S<modstats [--db=E<lt>database nameE<gt>] [--host=E<lt>hostnameE<gt>] \>
 S<         [--user=E<lt>usernameE<gt>] [--password=E<lt>database passwordE<gt>] \>
 S<         [--debug] [--dlm=E<lt>delimiterE<gt>] [--modtype=E<lt>model typesE<gt>] \>
@@ -40,6 +42,10 @@ S<         [--sessflds=E<lt>session setting fieldsE<gt>] [E<lt>output fileE<gt>]
 =head1 Options
 
 =over
+
+=item --help
+
+Print this help
 
 =item --db=<database name>
 
@@ -136,6 +142,7 @@ $DEBUG = false;
 $PROJECT = "";          # Optional project name
 
 GetOptions(
+  "help" => \$HELP,              # Invoke help
   "db=s" => \$DB,                # Database name
   "debug" => \$DEBUG,            # Invoke debug mode
   "dlm=s" => \$DLM,              # Output delimiter
@@ -153,6 +160,11 @@ GetOptions(
   "list-projects" => \$LISTPROJ, # List projects
   "list-groves" => \$LISTGRVS    # List groves
     ) || die;
+
+if ($HELP) {
+  exec "perldoc $0\n";
+  exit;
+}
 
 $ARGC = @ARGV;
 if ($ARGC > 0) {
