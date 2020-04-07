@@ -72,7 +72,7 @@ options are ignored.
 =item --list-groves
 
 Display the groves available in the database associated with the given project, instead of the usual
-table.  The --dlm, --modtype, --target, --perfstats, --sampleid, --project, --grove, --sortby, and
+table.  The --dlm, --modtype, --target, --perfstats, --project, --grove, --sortby, and
 --sessflds options are ignored.
 
 =item --modtype=<model types>
@@ -202,6 +202,7 @@ if ($LISTPROJ) {
 
 if ($LISTGRVS) {
   my $stmt = "select distinct grove from perfstats where project='$PROJECT';";
+  if (defined($SAMPLE)) {$stmt=~s/;$/ and sampleid='$SAMPLE';/}
   my $res = &writedb($dbh, $stmt);
   my $nrec = $res->ntuples;
   for (my $i = 0; $i < $nrec; $i++) {
