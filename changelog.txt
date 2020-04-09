@@ -47,5 +47,6 @@ ead of first.
     * Add new options --list-groves and --help
     * Increment version to 0.5.
     * Support --sampleid with --list-groves.
-    * Increment version of modstats to 0.51.
-
+    * Increment version to 0.51.
+    * Add new option --list-targets.
+    * Increment version to 0.52.
