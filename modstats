@@ -34,7 +34,7 @@ S<modstats [--db=E<lt>database nameE<gt>] [--host=E<lt>hostnameE<gt>] \>
 S<         [--user=E<lt>usernameE<gt>] [--password=E<lt>database passwordE<gt>] \>
 S<         [--debug] [--dlm=E<lt>delimiterE<gt>] [--modtype=E<lt>model typesE<gt>] \>
 S<         [--target=E<lt>target variableE<gt>] [--list-projects] \>
-S<         [--list-groves] [--perfstats=E<lt>performance stat fieldsE<gt>] \>
+S<         [--list-groves] [--list-targets] [--perfstats=E<lt>performance stat fieldsE<gt>] \>
 S<         [--sampleid=learn|test|holdout] [--project=E<lt>project nameE<gt>] \>
 S<         [--grove=E<lt>grove nameE<gt>]  [--sortby=E<lt>field nameE<gt>] \>
 S<         [--sessflds=E<lt>session setting fieldsE<gt>] [E<lt>output fileE<gt>] >
@@ -66,14 +66,21 @@ Specify the delimiter in the output dataset (default=F<,>)
 =item --list-projects
 
 Display the projects available in the database instead of the usual table.  The --dlm, --modtype,
---target, --perfstats, --sampleid, --project, --grove, --sortby, --sessflds, and --list-groves
-options are ignored.
+--target, --perfstats, --sampleid, --project, --grove, --sortby, --sessflds, --list-groves, and
+--list-targets options are ignored.
 
 =item --list-groves
 
 Display the groves available in the database associated with the given project, instead of the usual
-table.  The --dlm, --modtype, --target, --perfstats, --project, --grove, --sortby, and
---sessflds options are ignored.
+table.  The --dlm, --modtype, --target, --perfstats, --grove, --sortby, --sessflds and --list-targets
+options are ignored.
+
+=item --list-targets
+
+For each grove specified, list the name(s) of the target field(s).  If the --grove option is
+specified, then only the field name is displayed.  Otherwise, both the grove and field names are
+displayed.  The --dlm, --modtype, --target, --perfstats, --sortby, --sampleid, and --sessflds
+options are ignored.
 
 =item --modtype=<model types>
 
@@ -127,7 +134,9 @@ sub lclist(@);      # Convert input list to lowercase
 sub qjoin($@);      # Join the list, but quote the strings
 sub sqlexec($$);    # Execute an SQL statement
 sub writedb($$);    # Write an SQL statement either to the database engine or STDOUT
+sub writelist($$);  # Write a delimmited list to the specified stream
 sub writeln($$);    # Write one line of text to the specified stream
+sub writeQuery($$); # Write query result to the specified stream
 
 # Set Constants
 $BLANK = "";
@@ -158,7 +167,8 @@ GetOptions(
   "sortby=s" => \$SORTBY,        # Field on which to sort (descending)
   "sampleid=s" => \$SAMPLE,      # Sample ID to select
   "list-projects" => \$LISTPROJ, # List projects
-  "list-groves" => \$LISTGRVS    # List groves
+  "list-groves" => \$LISTGRVS,   # List groves
+  "list-targets"=> \$LISTTGTS    # List targets
     ) || die;
 
 if ($HELP) {
@@ -204,11 +214,20 @@ if ($LISTGRVS) {
   my $stmt = "select distinct grove from perfstats where project='$PROJECT';";
   if (defined($SAMPLE)) {$stmt=~s/;$/ and sampleid='$SAMPLE';/}
   my $res = &writedb($dbh, $stmt);
-  my $nrec = $res->ntuples;
-  for (my $i = 0; $i < $nrec; $i++) {
-    my @values = $res->fetchrow;
-    &writeln(STDOUT, $values[0]);
-  }
+  &writeQuery(STDOUT, $res);
+  exit;
+}
+
+if ($LISTTGTS) {
+  my @fldlist = "fieldname";
+  my $whereclse = "where project='$PROJECT' and usagetype='predicted'";
+  if (defined($GROVE)) {$whereclse .= " and grove = '$GROVE'"}
+  else {unshift @fldlist, "grove"}
+  my $fldlist = join($DLM, @fldlist);
+  my $stmt = "select distinct $fldlist from modvars $whereclse;";
+  my $res = &writedb($dbh, $stmt);
+  if (!defined($GROVE)) {&writeln($fldlist)}
+  &writeQuery(STDOUT, $res);
   exit;
 }
 
@@ -360,7 +379,21 @@ sub writedb($$) {
   return $res;
 }
 
+sub writelist($$) {
+  my ($fh, @list) = @_;
+  &writeln($fh, join($DLM, @list));
+}
+
 sub writeln($$) {
   my ($fh, $line) = @_;
   print $fh "$line\n";
+}
+
+sub writeQuery($$) {
+  my ($fh, $qres) = @_;
+  my $nrec = $qres->ntuples;
+  for (my $i = 0; $i < $nrec; $i++) {
+    my @values = $qres->fetchrow;
+    &writelist(STDOUT, @values);
+  }
 }
