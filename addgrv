@@ -348,7 +348,8 @@ sub chkrecord($$$$) {
   my $stmt = "select count(*) from $tabname where ";
   for (my $i = 0; $i < $nkey; $i++) {
     if ($i > 0) {$stmt .= " and "}
-    $stmt .= "$$pkeyname[$i] = '$$pkeyval[$i]'";
+    $value = &sqlfmt($$pkeyval[$i], "str");
+    $stmt .= "$$pkeyname[$i] = $value";
   }
   $stmt .= ";";
   my $res = &writedb($dbh, $stmt);
@@ -539,7 +540,8 @@ sub insdata($$$\@\@\%@) {
     $stmt .= "$line) values (\n";
     # Add primary key field values to statement
     for (my $ikey = 0; $ikey < $nkey; $ikey++) {
-      $stmt .= "  '$$pkeyval[$ikey]', /* $$pkeyname[$ikey] */\n";
+      my $value = &sqlfmt($$pkeyval[$ikey]);
+      $stmt .= "  $value, /* $$pkeyname[$ikey] */\n";
     }
     for (my $ivar = 0; $ivar < $nvar; $ivar++) {
       my $name = $varname[$ivar];        # Field name
@@ -822,6 +824,7 @@ sub skip_past_blank($) {
 sub sqlfmt($$) {
   my ($value, $type) = @_;
   if (!defined($value) || $value eq ".") {return "NULL"} # Undefined is the same as missing
+  if (!defined($type)) {$type = "str"}
   if ($type eq "str") {
     $value=~s/'/''/g; # Any apostrophes in the string have to be doubled
     return &fmtstr($value);
@@ -869,7 +872,10 @@ sub writedb($$) {
       die "$mess\n";
     }
     return $res;
-  } else  {&writeln(STDOUT, $stmt)} # Otherwise, we're writing to a text stream
+  } else  {
+    &writeln(STDOUT, $stmt);
+    return;
+  } # Otherwise, we're writing to a text stream
 }
 
 sub writeln($$) {
@@ -883,8 +889,11 @@ sub xtable($$) {
   $tabname = lc($tabname);
   my $stmt = "select * from information_schema.columns where table_name='$tabname'";
   my $res = &writedb($dbh, $stmt); # Submit the query
-  my $nxfields = $res->ntuples;
-  return $nxfields > 0;
+  if (defined($res)) {
+    my $nxfields = $res->ntuples;
+    return $nxfields > 0;
+  }
+  else {return false}
 }
 
 sub xtype($) {
