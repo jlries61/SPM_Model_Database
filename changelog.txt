@@ -37,7 +37,11 @@ ead of first.
     --override option was issued.
 
 0.81:
-  * Correct quoting of strings in generated WHERE clauses (apostrophese have to be doubled).
+  * Correct quoting of strings in generated WHERE clauses (apostrophes have to be doubled).
+
+0.82:
+  * Correct quoting of strings in generated SQL statements
+  * Add additional commentary in the interest of making the code more readible.
   * Amendments to modstats:
     * Add new options --sampleid and --grove
     * Corrections to documentation
