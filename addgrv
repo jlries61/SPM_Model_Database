@@ -123,7 +123,7 @@ use Set::Tiny;                    # Unordered set support
 use XML::Parser;                  # A Perl module for parsing XML documents
 
 #Subroutine Declarations
-sub addopt(\$$$);                  # Add option to option string
+sub addopt(\$$$);                 # Add option to option string
 sub chkrecord($$$$);              # Return true if record already in the table, otherwise false
 sub chktable($$\@\%@);            # Check to see if the target table already exists.  If it does.
                                   # then add any new fields that may be required.  Otherwise,
@@ -136,8 +136,6 @@ sub getelem(\@$);                 # Return a list of children of the given XML e
                                   # given name
 sub getelem_re(\@$);              # Return a list of children of the given XML element with names
                                   # matching the given pattern
-sub getschema($);                 # Return a list of mining schema elements from the given PMML
-                                  # document
 sub getval($$$);                  # Return the SQL-formatted value of the given field
 sub insdata($$$\@\@\%@);          # Insert a record into a table
 sub lclist(@);                    # Convert input list to lowercase
@@ -343,8 +341,11 @@ sub addopt(\$$$) {
 
 sub chkrecord($$$$) {
   my ($dbh, $tabname, $pkeyname, $pkeyval) = @_;
+  # If the table does not exist, then the answer is "no"
   if (!&xtable($dbh, $tabname)) {return $false}
   my $nkey = @$pkeyname;
+  # The way we determine if the record exists is to count the number of records that meet the critera
+  # If the number is zero then the record does not exist.  Otherwise it does
   my $stmt = "select count(*) from $tabname where ";
   for (my $i = 0; $i < $nkey; $i++) {
     if ($i > 0) {$stmt .= " and "}
@@ -415,9 +416,11 @@ sub datadict($$$\%) {
     my $optype = $attrib{"optype"};          # categorical or continuous
     my $datatype = $attrib{"dataType"};      # Field data type
     my @pkval = ($project, $grvname, $name); # Primary key values
+    # Create the data record
     $data{"value", $grvname, "Optype"} = $optype;
     $data{"value", $grvname, "DataType"} = $datatype;
     $data{"value", $grvname, "Label"} = $label;
+    # And insert it into the table using the specified key values
     &insdata($dbh, $DATADICT, $grvname, \@DATAKEYS, \@pkval, \%data, "Optype", "DataType", "Label");
 
     # For categorical fields, enter the individual classes into the class dictionary
@@ -484,13 +487,13 @@ sub getval($$$) {
   if ($narg == 3) {$grvname = shift @args} # If there are three, then the first is the grove name
   my ($name, $pdata) = @args;
   my $type = $$pdata{"type", $name}; # Field type
-  my $value;
-  my $is_vector = $$pdata{"is_vector", $name};
-  my $sqlval = $BLANK;
+  my $value; # Field value
+  my $is_vector = $$pdata{"is_vector", $name}; # Is the field in question a vector?
+  my $sqlval = $BLANK; # SQL-formatted value.  This is what we return
   if (!defined($type)) {$type = "str"}  # Default type
   if (defined($grvname)) {$value = $$pdata{"value", $grvname, $name}}
   else {$value = $$pdata{"value", $name}}
-  if ($is_vector) {
+  if ($is_vector) { # Then we return the properly formatted list of values
     my $line = "'{"; # Open with a curly brace
     my $first = true;  # Set to false after processing first element
     foreach my $elem (@$value) {
@@ -520,18 +523,19 @@ sub insdata($$$\@\@\%@) {
         $stmt .= "\n  $varname = $value";
       } #...otherwise, we ignore it.
       $stmt .= " where " . &whereclse($pkeyname, $pkeyval, $pdata) . ";";
-      &writedb($dbh, $stmt);
+      &writedb($dbh, $stmt); # Print or execute UPDATE statement.
     }
-  } else {
+  } else { # We're adding a brand new record
     my $first = true;
     my $nkey = @$pkeyname;                 # List of primary key field names
     my $nvar = @varname;                   # List of data field names
     my $stmt = "insert into $tabname (\n"; # Start generating SQL statement
     my $line = $SPACE;
+    # Generate the list of field names
     foreach my $name (@$pkeyname, @varname) {
       if ($first) {$first = false}
       else {$line .= ",";}
-      if (length($line) > $WRAPLEN) {
+      if (length($line) > $WRAPLEN) { # If the line is too long, then wrap it
         $stmt .= "$line\n";
         $line = "  ";
       } else {$line .= $SPACE}
@@ -540,6 +544,7 @@ sub insdata($$$\@\@\%@) {
     $stmt .= "$line) values (\n";
     # Add primary key field values to statement
     for (my $ikey = 0; $ikey < $nkey; $ikey++) {
+      # It would be convenient to use &getval here, but...
       my $value = &sqlfmt($$pkeyval[$ikey]);
       $stmt .= "  $value, /* $$pkeyname[$ikey] */\n";
     }
