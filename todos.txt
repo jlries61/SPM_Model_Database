@@ -1,6 +1,8 @@
 1.  Address addgrv errata as follows:
-  a.  Use ordered sets instead of unordered sets for ease of testing.
-  b.  Extract memos and add to session table.
+  a.  Fix ordering of the processing of multiple groves to avoid memory overload.
+  b.  Add --help option.
+  c.  Use ordered sets instead of unordered sets for ease of testing.
+  d.  Extract memos and add to session table.
 
 2.  Create utility to generate data dictionaries.
 
