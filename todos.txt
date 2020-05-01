@@ -1,9 +1,11 @@
 1.  Address addgrv errata as follows:
-  a.  Fix ordering of the processing of multiple groves to avoid memory overload.
-  b.  Add --help option.
-  c.  Use ordered sets instead of unordered sets for ease of testing.
-  d.  Extract memos and add to session table.
+  a.  Fix ordering of the processing of multiple groves to avoid memory overload (8 hours).
+  b.  Add --help option (30 minutes).
+  c.  Use ordered sets instead of unordered sets for ease of testing (2 hours).
+  d.  Extract memos and add to session table (8 hours).
 
-2.  Create utility to generate data dictionaries.
+2.  Create utility to generate data dictionaries (16 hours).
 
-3.  Create utility to generate commands needed to replicate the desired model.
+3.  Create utility to generate commands needed to replicate the desired model (5 days).
+
+4.  Develop test suite (8 hours)
