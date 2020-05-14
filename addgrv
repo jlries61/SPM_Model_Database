@@ -6,7 +6,7 @@ addgrv - Extract data from a set of SPM grove files and store them in a PostgreS
 
 =head1 Version
 
-0.82
+0.83
 
 =head1 Prerequisites
 
