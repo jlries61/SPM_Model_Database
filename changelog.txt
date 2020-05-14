@@ -54,3 +54,5 @@ ead of first.
     * Increment version to 0.51.
     * Add new option --list-targets.
     * Increment version to 0.52.
+0.83:
+  * Correct parsing of grove file names.
