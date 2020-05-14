@@ -253,7 +253,11 @@ foreach my $grove (@ARGV) {
   my $grvpath = $grove;
   if (defined($GRVPATH)) {$grvpath = "$GRVPATH/$grove"}
 
-  my ($grvname, $grvext) = split(/\./, $grove, 2);  # Basename and extension for the grove file
+  my @part = split(/\./, $grvpath);
+  my $grvext = ".$part[-1]";
+  my ($grvname, $grvdir) = fileparse($grvpath);
+  $grvname = basename($grvname, $grvext);
+  
   my @pkeyval = ($PROJECT, $grvname);
   if ($grvset->has($grvname)) {next}                # If we've already processed this grove,
                                                     # then skip
